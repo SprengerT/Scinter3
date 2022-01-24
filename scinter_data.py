@@ -30,6 +30,7 @@ v_c = 299792458. #m/s
 MHz = 1.0e+6
 mHz = 1.0e-3
 musec = 1.0e-6
+mus = musec
 sqrtmus = np.sqrt(musec)
 e = 1.602176634e-19 #C
 me = 9.1093837015e-31 #kg
@@ -760,6 +761,20 @@ class B1508p55_Eff(intensity):
         #self.mask = data_npz["mask"]
         #self.pulse = data_npz["profile"]
         #self.bpass = data_npz["bpass"]
+        self.recalculate()
+        
+class B0834p06_brisken(intensity):
+    def __init__(self,tel):
+        # - load data
+        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/"
+        data_path = file_path+'dynamic_spectrum_'+tel+'.npz'
+        data_npz = np.load(data_path)
+        self.DS = data_npz["I"]
+        #self.DS /= np.std(self.DS)
+        self.nu = data_npz["f_MHz"]*MHz
+        self.t = data_npz["t_s"]
+        #find more accurate date of observation!
+        self.mjd = 53686. + self.t/day
         self.recalculate()
         
 class B1508p55_Eff_paf(intensity):
@@ -2479,12 +2494,13 @@ class Efield:
     def __init__(self,DS,**kwargs):
         self.data_path = kwargs.get("data_path",None)
         overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","Efield.npz")
         if self.data_path==None:
             self.compute(DS,kwargs)
         else:
             if not os.path.exists(self.data_path):
                 os.makedirs(self.data_path)
-            file_data = os.path.join(self.data_path,"Efield.npz")
+            file_data = os.path.join(self.data_path,file_name)
             recompute = True
             if DS==None:
                 recompute = False
@@ -2557,12 +2573,14 @@ class Efield:
             raise TypeError
             
         N_th = kwargs.get("N_th",100)
-        fD_max = kwargs.get("fD_max",1.*mHz)
+        #fD_max = kwargs.get("fD_max",1.*mHz)
         tchunk = kwargs.get("tchunk",50)
         nuchunk = kwargs.get("nuchunk",300)
         npad = kwargs.get("npad",3)
-        Deff = kwargs.get("Deff",120.*pc)
-        veff = kwargs.get("veff",20.*kms)
+        #Deff = kwargs.get("Deff",120.*pc)
+        #veff = kwargs.get("veff",20.*kms)
+        tau_max = kwargs.get("tau_max",1.*mus)
+        zeta = kwargs.get("zeta",1.)
         
         def find_chunks(N,Nc):
             """
@@ -2580,10 +2598,16 @@ class Efield:
             return starts,ends,int(shift)
         
         #preparations
-        fD_to_rad = v_c/DS.nu0/veff
-        self.th = np.linspace(-fD_max*fD_to_rad,fD_max*fD_to_rad,num=N_th,dtype=float,endpoint=True)
-        th1 = np.ones((N_th,N_th))*self.th
+        #fD_to_rad = v_c/DS.nu0/veff
+        #self.th = np.linspace(-fD_max*fD_to_rad,fD_max*fD_to_rad,num=N_th,dtype=float,endpoint=True)
+        #th1 = np.ones((N_th,N_th))*self.th
+        #th2 = th1.T
+        
+        stau_max = np.sqrt(tau_max)
+        staus = np.linspace(-stau_max,stau_max,num=N_th,dtype=float,endpoint=True)
+        th1 = np.ones((N_th,N_th))*staus
         th2 = th1.T
+        
         self.Efield = np.zeros(DS.DS.shape,dtype=complex)
         #- split into overlapping chunks
         t_starts,t_ends,t_shift = find_chunks(DS.N_t,tchunk)
@@ -2595,6 +2619,16 @@ class Efield:
         # htchunk = int(tchunk/2)
         # N_tchunk=(DS.N_t-htchunk)//htchunk
         # N_nuchunk=(DS.N_nu-hnuchunk)//hnuchunk
+        
+        ###reference from similar code:
+        # stau_max = np.sqrt(tau_max)
+        # staus = np.linspace(-stau_max,stau_max,num=N_th,dtype=float,endpoint=True)
+        # th1 = np.ones((N_th,N_th))*staus
+        # stau_to_fD = 2.*f0_evo*zeta
+        # tau_inv = (((th1**2-th2**2)-tau[0]+dtau/2)//dtau).astype(int)
+        # fd_inv = ((stau_to_fD*(th1-th2)-fd[0]+dfd/2)//dfd).astype(int)
+        # eta = 1./(2.*f0_evo*zeta)**2
+        # thth *= np.sqrt(np.abs(2*eta*stau_to_fD*(th2-th1))) #flux conervation
             
         #main computation
         bar = progressbar.ProgressBar(maxval=N_nuchunk, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
@@ -2603,13 +2637,15 @@ class Efield:
             bar.update(fc)
             #select Chunk and determine curvature
             l_nuchunk = nu_ends[fc]-nu_starts[fc]
-            nu0 = np.mean(DS.nu[nu_starts[fc]:nu_ends[fc]])
             nu = DS.nu[nu_starts[fc]:nu_ends[fc]]
-            rad_to_fD = veff*nu0/v_c
-            eta = v_c*Deff/(2.*nu0**2*veff**2)
+            nu0 = np.mean(nu)
+            #rad_to_fD = veff*nu0/v_c
+            #eta = v_c*Deff/(2.*nu0**2*veff**2)
+            stau_to_fD = 2.*nu0*zeta
+            eta = 1./(2.*nu0*zeta)**2
             #Map back to time/frequency space
-            fD_map = (self.th[na,:]-self.th[:,na])*rad_to_fD
-            tau_map = eta*(self.th[na,:]**2-self.th[:,na]**2)*rad_to_fD**2
+            fD_map = (staus[na,:]-staus[:,na])*stau_to_fD
+            tau_map = (staus[na,:]**2-staus[:,na]**2)
             # combine by windowing
             fmsk = np.ones(l_nuchunk)
             if fc>0:
@@ -2633,8 +2669,10 @@ class Efield:
                 fD_edges = np.linspace(fD[0]-dfD/2.,fD[-1]+dfD/2.,fD.shape[0]+1,endpoint=True)
                 tau_edges = np.linspace(tau[0]-dtau/2.,tau[-1]+dtau/2.,tau.shape[0]+1,endpoint=True)
                 #Compute thth diagram
-                tau_inv = ((eta*((th1*rad_to_fD)**2-(th2*rad_to_fD)**2)-tau[0]+dtau/2)//dtau).astype(int)
-                fD_inv = ((th1*rad_to_fD-th2*rad_to_fD-fD[0]+dfD/2)//dfD).astype(int)
+                #tau_inv = ((eta*((th1*rad_to_fD)**2-(th2*rad_to_fD)**2)-tau[0]+dtau/2)//dtau).astype(int)
+                #fD_inv = ((th1*rad_to_fD-th2*rad_to_fD-fD[0]+dfD/2)//dfD).astype(int)
+                tau_inv = (((th1**2-th2**2)-tau[0]+dtau/2)//dtau).astype(int)
+                fD_inv = ((th1*stau_to_fD-th2*stau_to_fD-fD[0]+dfD/2)//dfD).astype(int)
                 thth = np.zeros((N_th,N_th), dtype=complex)
                 pnts = (tau_inv > 0) * (tau_inv < tau.shape[0]) * (fD_inv > 0) * (fD_inv < fD.shape[0])
                 thth[pnts] = SS[fD_inv[pnts],tau_inv[pnts]]
@@ -3303,12 +3341,15 @@ class zeta_eigenvalues:
                     recompute = False
             if recompute:
                 self.compute(DS,kwargs)
-                np.savez(file_data,zetas=self.zetas,EV=self.EV)
+                np.savez(file_data,zetas=self.zetas,EV=self.EV,EVs=self.EVs,t=self.t,mjd=self.mjd)
             else:
                 if os.path.exists(file_data):
                     lib_data = np.load(file_data)
                     self.zetas = lib_data["zetas"]
                     self.EV = lib_data["EV"]
+                    self.EVs = lib_data["EVs"]
+                    self.mjd = lib_data["mjd"]
+                    self.t = lib_data["t"]
                 else:
                     raise KeyError
         self.recalculate()
@@ -3328,73 +3369,172 @@ class zeta_eigenvalues:
         N_zeta = kwargs.get("N_zeta",100)
         zeta_min = kwargs.get("zeta_min",0.6e-9)
         zeta_max = kwargs.get("zeta_max",2.2e-9)
+        vary_chunk = kwargs.get("vary_chunk",True)
         
         stau_max = np.sqrt(tau_max)
         
-        hnuchunk = int(nuchunk/2)
-        htchunk = int(tchunk/2)
-        N_tchunk = (DS.N_t-htchunk)//htchunk
-        N_nuchunk = (DS.N_nu-hnuchunk)//hnuchunk
-        staus = np.linspace(-stau_max,stau_max,num=N_th,dtype=float,endpoint=True)
-        self.EV = np.zeros(N_zeta)
-        self.zetas = np.linspace(zeta_min,zeta_max,num=N_zeta)
-        
-        #main computation
-        bar = progressbar.ProgressBar(maxval=N_tchunk*N_nuchunk, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
-        bar.start()
-        for tc in range(N_tchunk):
-            t_chunk = DS.t[tc*htchunk:tc*htchunk+tchunk]
-            for fc in range(N_nuchunk):
-                bar.update(tc*N_nuchunk+fc)
-                #print(tc,fc)
-                dspec = DS.DS[tc*htchunk:tc*htchunk+tchunk,fc*hnuchunk:fc*hnuchunk+nuchunk]
-                dspec = dspec - dspec.mean()
-                nu_chunk = DS.nu[fc*hnuchunk:fc*hnuchunk+nuchunk]
-                f0_evo = nu_chunk.mean()
-                dspec_pad = np.pad(dspec,((0,npad*dspec.shape[0]),(0,npad*dspec.shape[1])),mode='constant',constant_values=dspec.mean())
+        if vary_chunk:
+            def find_chunks(N,Nc):
+                """
+                N : length of list
+                Nc : Maximum number of entries per chunk
+                """
+                #number of chunks
+                Ns = (2*N)//Nc
+                #optimal shift of chunk (float)
+                shift = N/(Ns+1.)
+                #create list by rounding to integers
+                starts = [np.rint(i*shift).astype(int) for i in range(Ns)]
+                #mids = [np.rint((i+1)*shift).astype(int) for i in range(Ns)]
+                ends = [np.rint((i+2)*shift).astype(int) for i in range(Ns)]
+                return starts,ends,int(shift)
+            
+            #- split into overlapping chunks
+            t_starts,t_ends,t_shift = find_chunks(DS.N_t,tchunk)
+            nu_starts,nu_ends,nu_shift = find_chunks(DS.N_nu,nuchunk)
+            N_tchunk = len(t_starts)
+            N_nuchunk = len(nu_starts)
+            
+            staus = np.linspace(-stau_max,stau_max,num=N_th,dtype=float,endpoint=True)
+            self.EV = np.zeros(N_zeta)
+            self.EVs = np.zeros((N_tchunk,N_zeta))
+            self.mjd = np.zeros(N_tchunk)
+            self.t = np.zeros(N_tchunk)
+            self.zetas = np.linspace(zeta_min,zeta_max,num=N_zeta)
+            
+            #main computation
+            for tc in range(N_tchunk):
+                t_chunk = DS.t[t_starts[tc]:t_ends[tc]]
+                mjd_chunk = DS.mjd[t_starts[tc]:t_ends[tc]]
+                self.t[tc] = np.mean(t_chunk)
+                self.mjd[tc] = np.mean(mjd_chunk)
+                print("{0}/{1}: {2} - {3} ({4})".format(tc+1,N_tchunk,t_chunk[0],t_chunk[-1],len(t_chunk)))
+                bar = progressbar.ProgressBar(maxval=N_nuchunk, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+                bar.start()
+                for fc in range(N_nuchunk):
+                    bar.update(fc)
+                    #print(tc,fc)
+                    dspec = DS.DS[t_starts[tc]:t_ends[tc],nu_starts[fc]:nu_ends[fc]]
+                    dspec = dspec - dspec.mean()
+                    nu_chunk = DS.nu[nu_starts[fc]:nu_ends[fc]]
+                    f0_evo = nu_chunk.mean()
+                    dspec_pad = np.pad(dspec,((0,npad*dspec.shape[0]),(0,npad*dspec.shape[1])),mode='constant',constant_values=dspec.mean())
 
-                ##Form SS and coordinate arrays
-                SS = np.fft.fftshift(np.fft.fft2(dspec_pad))
-                fd = np.fft.fftshift(np.fft.fftfreq((npad+1)*t_chunk.shape[0],t_chunk[1]-t_chunk[0]))
-                tau = np.fft.fftshift(np.fft.fftfreq((npad+1)*nu_chunk.shape[0],nu_chunk[1]-nu_chunk[0]))
-                
-                ##Setup for chisq search
-                eigs_zeta = np.zeros(N_zeta)
-                
-                ##Determine chisq for each delay drift
-                for i in range(N_zeta):
-                    zeta = self.zetas[i]
-                    stau_to_fD = 2.*f0_evo*zeta
-                    th1 = np.ones((N_th,N_th))*staus
-                    th2 = th1.T
-                    dfd = np.diff(fd).mean()
-                    dtau = np.diff(tau).mean()
-                    tau_inv = (((th1**2-th2**2)-tau[0]+dtau/2)//dtau).astype(int)
-                    fd_inv = ((stau_to_fD*(th1-th2)-fd[0]+dfd/2)//dfd).astype(int)
-                    thth = np.zeros((N_th,N_th), dtype=complex)
-                    pnts = (tau_inv > 0) * (tau_inv < tau.shape[0]) * (fd_inv > 0) * (fd_inv < fd.shape[0])
-                    thth[pnts] = SS[fd_inv[pnts],tau_inv[pnts]]
-                    eta = 1./(2.*f0_evo*zeta)**2
-                    thth *= np.sqrt(np.abs(2*eta*stau_to_fD*(th2-th1))) #flux conervation
-                    thth /= np.mean(np.abs(thth))
-                    if 1:
-                        thth -= np.tril(thth) #make hermitian
-                        thth += np.conjugate(np.triu(thth).T)
-                        thth -= np.diag(np.diag(thth))
-                        thth -= np.diag(np.diag(thth[::-1, :]))[::-1, :]
-                        thth = np.nan_to_num(thth)
-                    else:
-                        #Produces a similar but slightly different result
-                        thth = (thth+np.conj(np.transpose(thth)))/2. #assert hermitian
-                    ##Find first eigenvector and value
-                    v0 = thth[thth.shape[0]//2,:]
-                    v0 /= np.sqrt((np.abs(v0)**2).sum())
-                    w,V = eigsh(thth,1,v0=v0,which='LA')
-                    eigs_zeta[i] = np.abs(w[0])
+                    ##Form SS and coordinate arrays
+                    SS = np.fft.fftshift(np.fft.fft2(dspec_pad))
+                    fd = np.fft.fftshift(np.fft.fftfreq((npad+1)*t_chunk.shape[0],t_chunk[1]-t_chunk[0]))
+                    tau = np.fft.fftshift(np.fft.fftfreq((npad+1)*nu_chunk.shape[0],nu_chunk[1]-nu_chunk[0]))
                     
-                if not np.isnan(eigs_zeta).any():
-                    self.EV += eigs_zeta
-        bar.finish()
+                    ##Setup for chisq search
+                    eigs_zeta = np.zeros(N_zeta)
+                    
+                    ##Determine chisq for each delay drift
+                    for i in range(N_zeta):
+                        zeta = self.zetas[i]
+                        stau_to_fD = 2.*f0_evo*zeta
+                        th1 = np.ones((N_th,N_th))*staus
+                        th2 = th1.T
+                        dfd = np.diff(fd).mean()
+                        dtau = np.diff(tau).mean()
+                        tau_inv = (((th1**2-th2**2)-tau[0]+dtau/2)//dtau).astype(int)
+                        fd_inv = ((stau_to_fD*(th1-th2)-fd[0]+dfd/2)//dfd).astype(int)
+                        thth = np.zeros((N_th,N_th), dtype=complex)
+                        pnts = (tau_inv > 0) * (tau_inv < tau.shape[0]) * (fd_inv > 0) * (fd_inv < fd.shape[0])
+                        thth[pnts] = SS[fd_inv[pnts],tau_inv[pnts]]
+                        eta = 1./(2.*f0_evo*zeta)**2
+                        thth *= np.sqrt(np.abs(2*eta*stau_to_fD*(th2-th1))) #flux conervation
+                        thth /= np.mean(np.abs(thth))
+                        if 1:
+                            thth -= np.tril(thth) #make hermitian
+                            thth += np.conjugate(np.triu(thth).T)
+                            thth -= np.diag(np.diag(thth))
+                            thth -= np.diag(np.diag(thth[::-1, :]))[::-1, :]
+                            thth = np.nan_to_num(thth)
+                        else:
+                            #Produces a similar but slightly different result
+                            thth = (thth+np.conj(np.transpose(thth)))/2. #assert hermitian
+                        ##Find first eigenvector and value
+                        v0 = thth[thth.shape[0]//2,:]
+                        v0 /= np.sqrt((np.abs(v0)**2).sum())
+                        w,V = eigsh(thth,1,v0=v0,which='LA')
+                        eigs_zeta[i] = np.abs(w[0])
+                        
+                    if not np.isnan(eigs_zeta).any():
+                        self.EV += eigs_zeta
+                        self.EVs[tc,:] += eigs_zeta
+                bar.finish()
+        else:
+            hnuchunk = int(nuchunk/2)
+            htchunk = int(tchunk/2)
+            N_tchunk = (DS.N_t-htchunk)//htchunk
+            N_nuchunk = (DS.N_nu-hnuchunk)//hnuchunk
+            staus = np.linspace(-stau_max,stau_max,num=N_th,dtype=float,endpoint=True)
+            self.EV = np.zeros(N_zeta)
+            self.EVs = np.zeros((N_tchunk,N_zeta))
+            self.mjd = np.zeros(N_tchunk)
+            self.t = np.zeros(N_tchunk)
+            self.zetas = np.linspace(zeta_min,zeta_max,num=N_zeta)
+            
+            #main computation
+            bar = progressbar.ProgressBar(maxval=N_tchunk*N_nuchunk, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+            bar.start()
+            for tc in range(N_tchunk):
+                t_chunk = DS.t[tc*htchunk:tc*htchunk+tchunk]
+                mjd_chunk = DS.mjd[tc*htchunk:tc*htchunk+tchunk]
+                self.t[tc] = np.mean(t_chunk)
+                self.mjd[tc] = np.mean(mjd_chunk)
+                for fc in range(N_nuchunk):
+                    bar.update(tc*N_nuchunk+fc)
+                    #print(tc,fc)
+                    dspec = DS.DS[tc*htchunk:tc*htchunk+tchunk,fc*hnuchunk:fc*hnuchunk+nuchunk]
+                    dspec = dspec - dspec.mean()
+                    nu_chunk = DS.nu[fc*hnuchunk:fc*hnuchunk+nuchunk]
+                    f0_evo = nu_chunk.mean()
+                    dspec_pad = np.pad(dspec,((0,npad*dspec.shape[0]),(0,npad*dspec.shape[1])),mode='constant',constant_values=dspec.mean())
+
+                    ##Form SS and coordinate arrays
+                    SS = np.fft.fftshift(np.fft.fft2(dspec_pad))
+                    fd = np.fft.fftshift(np.fft.fftfreq((npad+1)*t_chunk.shape[0],t_chunk[1]-t_chunk[0]))
+                    tau = np.fft.fftshift(np.fft.fftfreq((npad+1)*nu_chunk.shape[0],nu_chunk[1]-nu_chunk[0]))
+                    
+                    ##Setup for chisq search
+                    eigs_zeta = np.zeros(N_zeta)
+                    
+                    ##Determine chisq for each delay drift
+                    for i in range(N_zeta):
+                        zeta = self.zetas[i]
+                        stau_to_fD = 2.*f0_evo*zeta
+                        th1 = np.ones((N_th,N_th))*staus
+                        th2 = th1.T
+                        dfd = np.diff(fd).mean()
+                        dtau = np.diff(tau).mean()
+                        tau_inv = (((th1**2-th2**2)-tau[0]+dtau/2)//dtau).astype(int)
+                        fd_inv = ((stau_to_fD*(th1-th2)-fd[0]+dfd/2)//dfd).astype(int)
+                        thth = np.zeros((N_th,N_th), dtype=complex)
+                        pnts = (tau_inv > 0) * (tau_inv < tau.shape[0]) * (fd_inv > 0) * (fd_inv < fd.shape[0])
+                        thth[pnts] = SS[fd_inv[pnts],tau_inv[pnts]]
+                        eta = 1./(2.*f0_evo*zeta)**2
+                        thth *= np.sqrt(np.abs(2*eta*stau_to_fD*(th2-th1))) #flux conervation
+                        thth /= np.mean(np.abs(thth))
+                        if 1:
+                            thth -= np.tril(thth) #make hermitian
+                            thth += np.conjugate(np.triu(thth).T)
+                            thth -= np.diag(np.diag(thth))
+                            thth -= np.diag(np.diag(thth[::-1, :]))[::-1, :]
+                            thth = np.nan_to_num(thth)
+                        else:
+                            #Produces a similar but slightly different result
+                            thth = (thth+np.conj(np.transpose(thth)))/2. #assert hermitian
+                        ##Find first eigenvector and value
+                        v0 = thth[thth.shape[0]//2,:]
+                        v0 /= np.sqrt((np.abs(v0)**2).sum())
+                        w,V = eigsh(thth,1,v0=v0,which='LA')
+                        eigs_zeta[i] = np.abs(w[0])
+                        
+                    if not np.isnan(eigs_zeta).any():
+                        self.EV += eigs_zeta
+                        self.EVs[tc,:] += eigs_zeta
+            bar.finish()
         
     def fit_peak(self,zeta_range):
         def chi_par(x, A, x0, C):
