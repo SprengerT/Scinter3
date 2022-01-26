@@ -702,373 +702,6 @@ class generic_intensity(intensity):
         self.DS = DS
         self.mjd = mjd0 + (self.t-np.mean(self.t))/day
         self.recalculate()
-        
-class B1508p55_Eff_classic(intensity):
-    def __init__(self,date):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508_Eff_2020/"
-        if type(date)==str:
-            if date in ["20200130","20200131","20200418","20200516","20200517","20200519","20200527","20200531","20200608"]:
-                data_path = file_path+'dynspec_Rob_'+date+'.npz'
-                data_npz = np.load(data_path)
-                self.DS = data_npz["dynspec"]
-                self.nu = data_npz["f_MHz"]*MHz
-                N_t,N_nu = self.DS.shape
-                t0 = float(data_npz['t0'])
-                self.t = np.linspace(0.,(N_t-1)*10.,num=N_t,dtype=float,endpoint=True)
-                self.mjd = t0+self.t/(24.*3600.)
-            else:
-                data_path = file_path+'dynspec_'+date+'.npz'
-                data_npz = np.load(data_path)
-                self.DS = data_npz["dynspec"]
-                self.nu = data_npz["freq_MHz"]*MHz
-                self.mjd = data_npz["time_MJD"]
-                self.t = (self.mjd-self.mjd[0])*day
-        else:
-            #combine observations (currently only for standard encoding and same frequency range and time spacing)
-            for i,obs in enumerate(date):
-                data_path = file_path+'dynspec_'+obs+'.npz'
-                data_npz = np.load(data_path)
-                if i==0:
-                    self.DS = data_npz["dynspec"]
-                    self.nu = data_npz["freq_MHz"]*MHz
-                    self.mjd = data_npz["time_MJD"]
-                    dmjd = np.diff(self.mjd).mean()
-                    N_nu = len(self.nu)
-                else:
-                    DS = data_npz["dynspec"]
-                    mjd = data_npz["time_MJD"]
-                    N_gap = int(np.rint((mjd[0]-self.mjd[-1])/dmjd))-1
-                    mjd_gap = np.linspace(self.mjd[-1]+dmjd,self.mjd[-1]+N_gap*dmjd,num=N_gap,endpoint=True)
-                    DS_gap = np.zeros((N_gap,N_nu),dtype=float)
-                    mjd = mjd + (dmjd-(mjd[0]-mjd_gap[-1]))
-                    self.DS = np.concatenate((self.DS,DS_gap,DS),axis=0)
-                    self.mjd = np.concatenate((self.mjd,mjd_gap,mjd),axis=0)
-            self.t = (self.mjd-self.mjd[0])*day
-        self.recalculate()
-        
-class B1508p55_Eff(intensity):
-    def __init__(self,date):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        data_path = file_path+'raw_dynspec_Eff_'+date+'.npz'
-        data_npz = np.load(data_path)
-        self.DS = data_npz["dynspec"]
-        self.DS /= np.std(self.DS)
-        self.nu = data_npz["freq_MHz"]*MHz
-        self.mjd = data_npz["time_MJD"]
-        self.t = (self.mjd-self.mjd[0])*day
-        #self.mask = data_npz["mask"]
-        #self.pulse = data_npz["profile"]
-        #self.bpass = data_npz["bpass"]
-        self.recalculate()
-        
-class B0834p06_brisken(intensity):
-    def __init__(self,tel):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/"
-        data_path = file_path+'dynamic_spectrum_'+tel+'.npz'
-        data_npz = np.load(data_path)
-        self.DS = data_npz["I"]
-        #self.DS /= np.std(self.DS)
-        self.nu = data_npz["f_MHz"]*MHz
-        self.t = data_npz["t_s"]
-        #find more accurate date of observation!
-        self.mjd = 53686. + self.t/day
-        self.recalculate()
-        
-class B1508p55_Eff_paf(intensity):
-    def __init__(self,date):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        data_path = file_path+'raw_dynspec_Eff_paf_'+date+'.npz'
-        data_npz = np.load(data_path)
-        self.DS = data_npz["dynspec"]
-        self.nu = data_npz["freq_MHz"]*MHz
-        self.mjd = data_npz["time_MJD"]
-        self.t = (self.mjd-self.mjd[0])*day
-        #self.mask = data_npz["mask"]
-        #self.pulse = data_npz["profile"]
-        #self.bpass = data_npz["bpass"]
-        self.recalculate()
-        
-class B1508p55_Eff_edd(intensity):
-    def __init__(self,date):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        if type(date)==str:
-            data_path = file_path+'raw_dynspec_Eff_edd_'+date+'.npz'
-            data_npz = np.load(data_path)
-            self.DS = data_npz["dynspec"]
-            self.nu = data_npz["freq_MHz"]*MHz
-            self.mjd = data_npz["time_MJD"]
-            self.DS = self.DS/np.std(self.DS)
-        else:
-            #combine observations (currently only for standard encoding and same frequency range and time spacing)
-            for i,obs in enumerate(date):
-                data_path = file_path+'raw_dynspec_Eff_edd_'+obs+'.npz'
-                data_npz = np.load(data_path)
-                if i==0:
-                    self.DS = data_npz["dynspec"]
-                    self.nu = data_npz["freq_MHz"]*MHz
-                    self.mjd = data_npz["time_MJD"]
-                    dmjd = np.diff(self.mjd).mean()
-                    N_nu = len(self.nu)
-                    #- correct for scaling
-                    self.DS = self.DS/np.std(self.DS)
-                else:
-                    DS = data_npz["dynspec"]
-                    #- correct for scaling
-                    DS = DS/np.std(DS)
-                    mjd = data_npz["time_MJD"]
-                    N_gap = int(np.rint((mjd[0]-self.mjd[-1])/dmjd))-1
-                    mjd_gap = np.linspace(self.mjd[-1]+dmjd,self.mjd[-1]+N_gap*dmjd,num=N_gap,endpoint=True)
-                    DS_gap = np.zeros((N_gap,N_nu),dtype=float)
-                    mjd = mjd + (dmjd-(mjd[0]-mjd_gap[-1]))
-                    self.DS = np.concatenate((self.DS,DS_gap,DS),axis=0)
-                    self.mjd = np.concatenate((self.mjd,mjd_gap,mjd),axis=0)
-        self.t = (self.mjd-self.mjd[0])*day
-        self.recalculate()
-        
-class B1508p55_Eff_edd_mask(intensity):
-    def __init__(self,date):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        if type(date)==str:
-            data_path = file_path+'raw_dynspec_Eff_edd_'+date+'.npz'
-            data_npz = np.load(data_path)
-            self.DS = data_npz["mask"]
-            self.nu = data_npz["freq_MHz"]*MHz
-            self.mjd = data_npz["time_MJD"]
-        else:
-            #combine observations (currently only for standard encoding and same frequency range and time spacing)
-            for i,obs in enumerate(date):
-                data_path = file_path+'raw_dynspec_Eff_edd_'+obs+'.npz'
-                data_npz = np.load(data_path)
-                if i==0:
-                    self.DS = data_npz["mask"]
-                    self.nu = data_npz["freq_MHz"]*MHz
-                    self.mjd = data_npz["time_MJD"]
-                    dmjd = np.diff(self.mjd).mean()
-                    N_nu = len(self.nu)
-                else:
-                    DS = data_npz["mask"]
-                    #- correct for scaling
-                    DS = DS/np.std(DS)
-                    mjd = data_npz["time_MJD"]
-                    N_gap = int(np.rint((mjd[0]-self.mjd[-1])/dmjd))-1
-                    mjd_gap = np.linspace(self.mjd[-1]+dmjd,self.mjd[-1]+N_gap*dmjd,num=N_gap,endpoint=True)
-                    DS_gap = np.zeros((N_gap,N_nu),dtype=float)
-                    mjd = mjd + (dmjd-(mjd[0]-mjd_gap[-1]))
-                    self.DS = np.concatenate((self.DS,DS_gap,DS),axis=0)
-                    self.mjd = np.concatenate((self.mjd,mjd_gap,mjd),axis=0)
-        self.t = (self.mjd-self.mjd[0])*day
-        self.recalculate()
-        
-class B1508p55_Eff_UBB_low(intensity):
-    def __init__(self,date):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        data_path = file_path+'raw_dynspec_Eff_'+date+'_UBB_low.npz'
-        data_npz = np.load(data_path)
-        self.DS = data_npz["dynspec"]
-        self.nu = data_npz["freq_MHz"]*MHz
-        self.mjd = data_npz["time_MJD"]
-        self.t = (self.mjd-self.mjd[0])*day
-        self.recalculate()
-       
-class B1508p55_Eff_UBB_high(intensity):
-    def __init__(self,date):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        data_path = file_path+'raw_dynspec_Eff_'+date+'_UBB_high.npz'
-        data_npz = np.load(data_path)
-        self.DS = data_npz["dynspec"]
-        self.nu = data_npz["freq_MHz"]*MHz
-        self.mjd = data_npz["time_MJD"]
-        self.t = (self.mjd-self.mjd[0])*day
-        self.recalculate()
-        
-class B1508p55_Eff_UBB(intensity):
-    def __init__(self,date):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        if type(date)==str:
-            data_path = file_path+'raw_dynspec_Eff_'+date+'_UBB_low.npz'
-            data_npz = np.load(data_path)
-            self.DS = data_npz["dynspec"]
-            self.nu = data_npz["freq_MHz"]*MHz
-            self.mjd = data_npz["time_MJD"]
-            self.t = (self.mjd-self.mjd[0])*day
-            dnu = np.diff(self.nu).mean()
-            N_t = len(self.t)
-            # - combine with high frequency part
-            data_path = file_path+'raw_dynspec_Eff_'+date+'_UBB_high.npz'
-            data_npz = np.load(data_path)
-            DS = data_npz["dynspec"]
-            nu = data_npz["freq_MHz"]*MHz
-            N_gap = int(np.rint((nu[0]-self.nu[-1])/dnu))-1
-            if N_gap>0:
-                nu_gap = np.linspace(self.nu[-1]+dnu,self.nu[-1]+N_gap*dnu,num=N_gap,endpoint=True)
-                DS_gap = np.zeros((N_t,N_gap),dtype=float)
-                nu = nu + (dnu-(nu[0]-nu_gap[-1]))
-                self.DS = np.concatenate((self.DS,DS_gap,DS),axis=1)
-                self.nu = np.concatenate((self.nu,nu_gap,nu),axis=0)
-            else:
-                self.DS = np.concatenate((self.DS,DS),axis=1)
-                self.nu = np.concatenate((self.nu,nu),axis=0)
-        else:
-            #combine observations (currently only for standard encoding and same frequency range and time spacing)
-            for i,obs in enumerate(date):
-                data_path_low = file_path+'raw_dynspec_Eff_'+obs+'_UBB_low.npz'
-                data_npz_low = np.load(data_path_low)
-                data_path_high = file_path+'raw_dynspec_Eff_'+obs+'_UBB_high.npz'
-                data_npz_high = np.load(data_path_high)
-                if i==0:
-                    DS_low = data_npz_low["dynspec"]
-                    DS_high = data_npz_high["dynspec"]
-                    #- normalize
-                    #norm = np.mean(DS_low)
-                    #DS_high *= norm/np.mean(DS_high)
-                    DS_low /= np.std(DS_low)
-                    DS_high /= np.std(DS_high)
-                    nu_low = data_npz_low["freq_MHz"]*MHz
-                    nu_high = data_npz_high["freq_MHz"]*MHz
-                    mjd_low = data_npz_low["time_MJD"]
-                    mjd_high = data_npz_high["time_MJD"]
-                    dmjd = np.diff(mjd_low).mean()
-                    N_nu_low = len(nu_low)
-                    N_nu_high = len(nu_high)
-                else:
-                    DS = data_npz_low["dynspec"]
-                    #DS *= norm/np.mean(DS)
-                    DS /= np.std(DS)
-                    mjd = data_npz_low["time_MJD"]
-                    N_gap = int(np.rint((mjd[0]-mjd_low[-1])/dmjd))-1
-                    if 0:#N_gap>0:
-                        mjd_gap = np.linspace(mjd_low[-1]+dmjd,mjd_low[-1]+N_gap*dmjd,num=N_gap,endpoint=True)
-                        DS_gap = np.zeros((N_gap,N_nu_low),dtype=float)
-                        mjd = mjd + (dmjd-(mjd[0]-mjd_gap[-1]))
-                        DS_low = np.concatenate((DS_low,DS_gap,DS),axis=0)
-                        mjd_low = np.concatenate((mjd_low,mjd_gap,mjd),axis=0)
-                    else:
-                        DS_low = np.concatenate((DS_low,DS),axis=0)
-                        mjd_low = np.concatenate((mjd_low,mjd),axis=0)
-                    
-                    DS = data_npz_high["dynspec"]
-                    #DS *= norm/np.mean(DS)
-                    DS /= np.std(DS)
-                    mjd = data_npz_high["time_MJD"]
-                    N_gap = int(np.rint((mjd[0]-mjd_high[-1])/dmjd))-1
-                    #print((mjd[-1]-mjd_low[-1])*day)
-                    if 0:#N_gap>0:
-                        mjd_gap = np.linspace(mjd_high[-1]+dmjd,mjd_high[-1]+N_gap*dmjd,num=N_gap,endpoint=True)
-                        DS_gap = np.zeros((N_gap,N_nu_high),dtype=float)
-                        mjd = mjd + (dmjd-(mjd[0]-mjd_gap[-1]))
-                        DS_high = np.concatenate((DS_high,DS_gap,DS),axis=0)
-                        mjd_high = np.concatenate((mjd_high,mjd_gap,mjd),axis=0)
-                    else:
-                        DS_high = np.concatenate((DS_high,DS),axis=0)
-                        mjd_high = np.concatenate((mjd_high,mjd),axis=0)
-            # - fixing different lengths
-            DS_high = np.concatenate((DS_high,np.zeros((1,N_nu_high),dtype=float)),axis=0)
-            print(mjd_low[-1]*day,mjd_high[-1]*day)
-            self.DS = np.concatenate((DS_low,DS_high),axis=1)
-            self.nu = np.concatenate((nu_low,nu_high),axis=0)
-            self.mjd = np.linspace(mjd_low[0],mjd_low[-1],num=len(mjd_low),endpoint=True)
-            self.t = (self.mjd-self.mjd[0])*day
-        
-        self.recalculate()
-
-
-        
-class B1508p55_Eff_pol(intensity):
-    def __init__(self,date,i_pol):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        data_path = file_path+'raw_pol'+str(i_pol)+'_dynspec_Eff_'+date+'.npz'
-        data_npz = np.load(data_path)
-        self.DS = data_npz["dynspec"]
-        self.nu = data_npz["freq_MHz"]*MHz
-        self.mjd = data_npz["time_MJD"]
-        self.t = (self.mjd-self.mjd[0])*day
-        #self.mask = data_npz["mask"]
-        #self.pulse = data_npz["profile"]
-        #self.bpass = data_npz["bpass"]
-        self.recalculate()
-        
-class B1508p55_Eff_pulse_paf(pulse_profile):
-    def __init__(self,date):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        data_path = file_path+'raw_dynspec_Eff_paf_'+date+'.npz'
-        data_npz = np.load(data_path)
-        #self.DS = data_npz["dynspec"]
-        self.nu = data_npz["freq_MHz"]*MHz
-        #self.mjd = data_npz["time_MJD"]
-        #self.mask = data_npz["mask"]
-        self.pulse = data_npz["profile"]
-        #self.bpass = data_npz["bpass"]
-        period = 0.739681265668
-        self.t = np.linspace(0.,period,num=self.pulse.shape[0])
-        self.recalculate()
-        
-class B1508p55_Eff_pulse(pulse_profile):
-    def __init__(self,date):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        data_path = file_path+'raw_dynspec_Eff_'+date+'.npz'
-        data_npz = np.load(data_path)
-        #self.DS = data_npz["dynspec"]
-        self.nu = data_npz["freq_MHz"]*MHz
-        #self.mjd = data_npz["time_MJD"]
-        #self.mask = data_npz["mask"]
-        self.pulse = data_npz["profile"]
-        #self.bpass = data_npz["bpass"]
-        period = 0.739681265668
-        self.t = np.linspace(0.,period,num=self.pulse.shape[0])
-        self.recalculate()
-        
-class B1508p55_Jiamusi(intensity):
-    def __init__(self,fig):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508_Jiamusi/"
-        #freq,time,amp = np.genfromtxt(file_path+fig)
-        freq,time,amp = np.array([],dtype=float),np.array([],dtype=float),np.array([],dtype=float)
-        with open(file_path+fig,'r') as readfile:
-            for line in readfile.readlines():
-                if line != "\n":
-                    entries = line.split()
-                    freq = np.append(freq,float(entries[0]))
-                    time = np.append(time,float(entries[1]))
-                    amp = np.append(amp,float(entries[2]))
-            
-        #time = time[~np.isnan(time)]
-        #amp = amp[~np.isnan(amp)]
-        
-        N_nu = 256
-        self.nu = freq[:N_nu]*MHz
-        self.mjd = time[::N_nu]
-        self.t = (self.mjd-self.mjd[0])*day
-        N_t = len(self.t)
-        #self.DS = np.swapaxes(amp.reshape(N_nu,N_t),0,1)
-        self.DS = amp.reshape(N_t,N_nu)
-        self.recalculate()
-        
-class B1508p55_Eff_classic_phased(intensity):
-    def __init__(self,date,i_phase):
-        # - load data
-        file_path = "/mnt/d/Ubuntu/MPIfR/keeper/Seafile/data/B1508+55_spectra_filtered/"
-        data_path = file_path+'raw_dynspec_Eff_'+date+'_phased.npz'
-        data_npz = np.load(data_path)
-        self.DS = data_npz["dynspec"][:,:,i_phase]
-        self.nu = data_npz["freq_MHz"]*MHz
-        self.mjd = data_npz["time_MJD"]
-        self.t = (self.mjd-self.mjd[0])*day
-        #self.mask = data_npz["mask"]
-        #self.pulse = data_npz["profile"]
-        #self.bpass = data_npz["bpass"]
-        self.recalculate()
 
 class SecSpec_FFT(secondary_spectrum):
     def __init__(self,DS,**kwargs):
@@ -2000,13 +1633,21 @@ class DS_backtrafo(intensity):
         self.mjd: time in MJD
         """
         self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",False)
+        file_name = kwargs.get("file_name","DS_backtrafo.npz")
         if self.data_path==None:
            self.compute(DS,CS,kwargs)
         else:
             if not os.path.exists(self.data_path):
                 os.makedirs(self.data_path)
-            file_data = os.path.join(self.data_path,"DS_backtrafo.npz")
-            if DS!=None and CS!=None:
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS==None or CS==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
                 self.compute(DS,CS,kwargs)
                 np.savez(file_data,DS=self.DS,t=self.t,nu=self.nu,mjd=self.mjd)
             else:
@@ -2433,58 +2074,86 @@ class brightness_dist:
         threshold_x = kwargs.get("threshold_x",np.inf)
         threshold_stau = kwargs.get("threshold_stau",0.)
         fraction = kwargs.get("fraction",0.5)
+        load_from = kwargs.get("load_from",None)
+        
+        recompute = True
     
-        modulation = np.swapaxes(np.mean(np.abs(self.mu),axis=2)**2,0,1)
-        modulation_normed = modulation / np.mean(np.abs(self.mu),axis=(1,2))[na,:]**2
-        
-        N_a = int((self.t[-1]-self.t[0])*(a_max-a_min)/self.dstau)
-        a = np.linspace(a_min,a_max,num=N_a,endpoint=True)
-        Hough = np.zeros((N_a,self.N_th),dtype=float)
-        
-        #perform the computation
-        weights = np.zeros((N_a,self.N_th),dtype=int)
-        bar = progressbar.ProgressBar(maxval=N_a*self.N_t , widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
-        bar.start()
-        for i_a in range(N_a):
-            for i_t in range(self.N_t):
-                bar.update(i_a*self.N_t+i_t)
-                for i_th0 in range(self.N_th):
-                    i_th = i_th0 + int(np.rint((self.t[i_t]-self.t[0])*a[i_a]/self.dstau))
-                    if 0<=i_th<self.N_th:
-                        if not np.abs(self.stau[i_th])<threshold_stau:
-                            Hough[i_a,i_th0] += modulation_normed[i_t,i_th]
-                            weights[i_a,i_th0] += 1
-        bar.finish()
-        weights[weights==0] = 1
-        Hough = Hough/weights
-        #filler = np.mean(Hough)
-        Hough[weights<fraction*self.N_t] = np.nan
-        measure = np.nanstd(Hough,axis=1)
-        
-        # - fit peak
-        threshold = threshold_y*np.max(measure[a<threshold_x])
-        mask = np.where((measure>threshold) & (a<threshold_x))[0]
-        xdata = a[mask]
-        ydata = measure[mask]
-        xscale = np.mean(xdata)
-        yscale = np.mean(ydata)
-        cscale = np.abs((np.min(ydata)-np.max(ydata))/4./(xdata[-1]-xdata[0])**2)
-        def parabola(data,x_in,y_in,curv_in):
-            x = x_in*xscale
-            y = y_in*yscale
-            curv = curv_in*cscale
-            #print(x,y,curv)
-            return curv*(data-x)**2+y
-        #try:
-        popt, pcov = curve_fit(parabola,xdata,ydata,p0=[np.mean(xdata)/xscale,np.max(ydata)/yscale,-1.],bounds=([np.min(xdata)/xscale,np.min(ydata)/yscale,-np.inf],[np.max(xdata)/xscale,np.max(ydata)/yscale,0.]))
-        perr = np.sqrt(np.diag(pcov))
-        fit_result = popt
-        fit_error = perr
-        fit_stau = xdata
-        fit_curve = parabola(xdata,fit_result[0],fit_result[1],fit_result[2])
-        vm_result = fit_result[0]*xscale
-        vm_error = fit_error[0]*xscale
-        print("Modulation speed fit peak: {0} +- {1}".format(vm_result,vm_error))
+        if load_from != None:
+            savefile = os.path.join(self.data_path,load_from)
+            if os.path.exists(savefile):
+                recompute = False
+            
+        if recompute:
+            modulation = np.swapaxes(np.mean(np.abs(self.mu),axis=2)**2,0,1)
+            modulation_normed = modulation / np.mean(np.abs(self.mu),axis=(1,2))[na,:]**2
+            
+            N_a = int((self.t[-1]-self.t[0])*(a_max-a_min)/self.dstau)
+            a = np.linspace(a_min,a_max,num=N_a,endpoint=True)
+            Hough = np.zeros((N_a,self.N_th),dtype=float)
+            
+            #perform the computation
+            weights = np.zeros((N_a,self.N_th),dtype=int)
+            bar = progressbar.ProgressBar(maxval=N_a*self.N_t , widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+            bar.start()
+            for i_a in range(N_a):
+                for i_t in range(self.N_t):
+                    bar.update(i_a*self.N_t+i_t)
+                    for i_th0 in range(self.N_th):
+                        i_th = i_th0 + int(np.rint((self.t[i_t]-self.t[0])*a[i_a]/self.dstau))
+                        if 0<=i_th<self.N_th:
+                            if not np.abs(self.stau[i_th])<threshold_stau:
+                                Hough[i_a,i_th0] += modulation_normed[i_t,i_th]
+                                weights[i_a,i_th0] += 1
+            bar.finish()
+            weights[weights==0] = 1
+            Hough = Hough/weights
+            #filler = np.mean(Hough)
+            Hough[weights<fraction*self.N_t] = np.nan
+            measure = np.nanstd(Hough,axis=1)
+            
+            # - fit peak
+            threshold = threshold_y*np.max(measure[a<threshold_x])
+            mask = np.where((measure>threshold) & (a<threshold_x))[0]
+            xdata = a[mask]
+            ydata = measure[mask]
+            xscale = np.mean(xdata)
+            yscale = np.mean(ydata)
+            cscale = np.abs((np.min(ydata)-np.max(ydata))/4./(xdata[-1]-xdata[0])**2)
+            def parabola(data,x_in,y_in,curv_in):
+                x = x_in*xscale
+                y = y_in*yscale
+                curv = curv_in*cscale
+                #print(x,y,curv)
+                return curv*(data-x)**2+y
+            fit_stau = xdata
+            try:
+                popt, pcov = curve_fit(parabola,xdata,ydata,p0=[np.mean(xdata)/xscale,np.max(ydata)/yscale,-1.],bounds=([np.min(xdata)/xscale,np.min(ydata)/yscale,-np.inf],[np.max(xdata)/xscale,np.max(ydata)/yscale,0.]))
+                perr = np.sqrt(np.diag(pcov))
+                fit_result = popt
+                fit_error = perr
+                fit_curve = parabola(xdata,fit_result[0],fit_result[1],fit_result[2])
+            except RuntimeError:
+                print("Error - curve_fit failed")
+                fit_curve = np.zeros_like(xdata)
+                fit_result = np.full(3,np.nan)
+                fit_error = np.full(3,np.nan)
+            vm_result = fit_result[0]*xscale
+            vm_error = fit_error[0]*xscale
+            print("Modulation speed fit peak: {0} +- {1}".format(vm_result,vm_error))
+            
+            if load_from != None:
+                np.savez(savefile,modulation=modulation,modulation_normed=modulation_normed,a=a,Hough=Hough,fit_stau=fit_stau,fit_curve=fit_curve,measure=measure,vm_result=vm_result,vm_error=vm_error)
+        else:
+            lib = np.load(savefile)
+            modulation = lib["modulation"]
+            modulation_normed = lib["modulation_normed"]
+            a = lib["a"]
+            Hough = lib["Hough"]
+            fit_stau = lib["fit_stau"]
+            fit_curve = lib["fit_curve"]
+            measure = lib["measure"]
+            vm_result = lib["vm_result"]
+            vm_error = lib["vm_error"]
         
         return modulation,modulation_normed,a,Hough,fit_stau,fit_curve,measure,vm_result,vm_error
         
