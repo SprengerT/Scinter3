@@ -24,8 +24,10 @@ degrees = np.pi/180.
 mas = degrees/1000./3600.
 v_c = 299792458. #m/s
 MHz = 1.0e+6
+GHz = 1.0e+6
 mHz = 1.0e-3
 musec = 1.0e-6
+mus = 1.0e-6
 e = 1.602176634e-19 #C
 me = 9.1093837015e-31 #kg
 eps0 = 8.8541878128e-12 #SI
@@ -623,9 +625,9 @@ class Two1DScreens:
         self.a_y = kwargs.get("a_y",0.)*np.pi/180.
         #anisotropy axes
         self.uv_x_par = np.array([np.cos(self.a_x), np.sin(self.a_x)])
-        self.uv_x_ort = np.array([np.sin(self.a_x), np.cos(self.a_x)])
+        self.uv_x_ort = np.array([-np.sin(self.a_x), np.cos(self.a_x)])
         self.uv_y_par = np.array([np.cos(self.a_y), np.sin(self.a_y)])
-        self.uv_y_ort = np.array([np.sin(self.a_y), np.cos(self.a_y)])
+        self.uv_y_ort = np.array([-np.sin(self.a_y), np.cos(self.a_y)])
         #pulsar velocity projected on second screen
         v_psr_vec = np.array([PMRA, PMDEC])*self.D_s
         self.V_s_par = np.dot(v_psr_vec, self.uv_y_par)
@@ -800,6 +802,70 @@ class Two1DScreens:
         DS = np.abs(E)**2
         return E,DS
         
+    def compute_SS(self,fD,tau,mjd0,psrname,nu0):
+        vtel_vec = self.get_vtel(mjd0,psrname)
+        V_p_par = np.dot(vtel_vec, self.uv_x_par)
+        V_p_ort = np.dot(vtel_vec, self.uv_x_ort)
+        V_s_vec = np.array([self.V_s_ra,self.V_s_dec])
+    
+        #independent screens effective quantities
+        Deff1_x = self.D_x*self.D_s/self.D_xs
+        Deff1_y = self.D_y*self.D_s/self.D_ys
+        Veff_x_vec = vtel_vec + self.D_x/self.D_xs*V_s_vec
+        Veff1_x = np.dot(Veff_x_vec,self.uv_x_par) - self.D_s/self.D_xs*self.V_x
+        Veff_y_vec = vtel_vec + self.D_y/self.D_ys*V_s_vec
+        Veff1_y = np.dot(Veff_y_vec,self.uv_y_par) - self.D_s/self.D_ys*self.V_y
+        #interacting screens effective quantities
+        denom = self.D_y*self.D_xs - self.D_x*self.D_ys*self.c**2
+        Deff2_x = self.D_s*self.D_y*self.D_x/denom
+        Veff2_x = -( self.D_s*self.D_y*self.V_x - self.c*self.D_s*self.D_x*self.V_y - self.s*self.c*self.D_x*self.D_ys*V_p_ort - self.s*self.D_x*self.D_y*self.V_s_ort - denom*V_p_par ) / denom
+        Deff2_y = (self.D_s*self.D_xs*self.D_y**2/self.D_ys)/denom
+        Veff2_y = -( self.D_s*self.D_xs*self.D_y/self.D_ys*self.V_y - self.c*self.D_y*self.D_s*self.V_x + self.s*self.D_y*self.D_xs*V_p_ort + self.s*self.c*self.D_x*self.D_y*self.V_s_ort - denom*self.D_y/self.D_ys*self.V_s_par ) / denom
+        D_mix = self.c*self.D_x*self.D_y*self.D_s/denom
+        #print(Deff1_x,Deff2_x,Deff1_y,Deff2_y)
+        #print(Veff1_x,Veff2_x,Veff1_y,Veff2_y)
+        
+        N_fD = len(fD)
+        N_tau = len(tau)
+        dfD = np.diff(fD).mean()
+        dtau = np.diff(tau).mean()
+        SS = np.zeros((N_fD,N_tau),dtype=float)
+        N_x = len(self.x)
+        N_y = len(self.y)
+        th_x = self.x/self.D_x
+        th_y = self.y/self.D_y
+        for i_x in range(N_x):
+            for i_y in range(N_y):
+                v_tau = Deff2_x/(2.*v_c)*th_x[i_x]**2 + Deff2_y/(2.*v_c)*th_y[i_y]**2 - D_mix/v_c*th_x[i_x]*th_y[i_y]
+                v_fD = -nu0/v_c*Veff2_x*th_x[i_x] - nu0/v_c*Veff2_y*th_y[i_y]
+                
+                i_tau = int(np.rint((v_tau-tau[0])/dtau))
+                i_fD = int(np.rint((v_fD-fD[0])/dfD))
+                
+                if (0<=i_tau<N_tau) and (0<=i_fD<N_fD):
+                    SS[i_fD,i_tau] += self.mu_x[i_x]*self.mu_y[i_y]
+        for i_x in range(N_x):
+            v_tau = Deff1_x/(2.*v_c)*th_x[i_x]**2
+            v_fD = -nu0/v_c*Veff1_x*th_x[i_x]
+            i_tau = int(np.rint((v_tau-tau[0])/dtau))
+            i_fD = int(np.rint((v_fD-fD[0])/dfD))
+            
+            if (0<=i_tau<N_tau) and (0<=i_fD<N_fD):
+                SS[i_fD,i_tau] += self.mu_x[i_x]*self.mu_CPy
+        for i_y in range(N_y):
+            v_tau = Deff1_y/(2.*v_c)*th_y[i_y]**2
+            v_fD = -nu0/v_c*Veff1_y*th_y[i_y]
+            i_tau = int(np.rint((v_tau-tau[0])/dtau))
+            i_fD = int(np.rint((v_fD-fD[0])/dfD))
+            
+            if (0<=i_tau<N_tau) and (0<=i_fD<N_fD):
+                SS[i_fD,i_tau] += self.mu_y[i_y]*self.mu_CPx
+                
+        #print(self.mu_CPx,self.mu_CPy)
+        #print("eta_x={0}".format(v_c*Deff2_x/(2.*nu0**2*Veff2_x**2)))
+        return SS
+        
+        
     # def compute_E_at_2ndSCR(self,t,nu,stau):
         # Deff_12 = self.D_s*self.D_y*self.D_x/(self.D_y*self.D_xs-self.D_x*self.D_ys*self.c**2)
         # Deff_x = self.D_x*self.D_s/self.D_xs
@@ -840,4 +906,82 @@ class Two1DScreens:
         E = E_real.reshape((N_t,N_nu,N_x))+1.j*E_im.reshape((N_t,N_nu,N_x))
         
         return E
+        
+class Evolution_Two1DScreens:
+    def  __init__(self,mjds,psrname):
+        #load pulsar
+        pulsar = SkyCoord.from_name(psrname)
+        rarad = pulsar.ra.value * np.pi/180
+        decrad = pulsar.dec.value * np.pi/180
+        
+        vtel_ra = np.zeros_like(mjds)
+        vtel_dec = np.zeros_like(mjds)
+        for i,v_mjd in enumerate(mjds):
+            time = Time(v_mjd, format='mjd')
+            pos_xyz, vel_xyz = get_body_barycentric_posvel('earth', time)
+            vx = vel_xyz.x.to(u.m/u.s).value
+            vy = vel_xyz.y.to(u.m/u.s).value
+            vz = vel_xyz.z.to(u.m/u.s).value
+            vtel_ra[i] = - vx * np.sin(rarad) + vy * np.cos(rarad)
+            vtel_dec[i] = - vx * np.sin(decrad) * np.cos(rarad) - vy * np.sin(decrad) * np.sin(rarad) + vz * np.cos(decrad)
+        self.vtel_vec = np.array([vtel_ra,vtel_dec])
+            
+    def compute(self,**kwargs):
+        #load free parameters
+        a_x = kwargs.get("a_x",0.)*np.pi/180.
+        a_y = kwargs.get("a_y",0.)*np.pi/180.
+        D_x = kwargs.get("D_x",1.)*pc
+        D_y = kwargs.get("D_y",2.)*pc
+        D_s = kwargs.get("D_s",3.)*pc
+        V_x = kwargs.get("V_x",0.)*1000.
+        V_y = kwargs.get("V_y",0.)*1000.
+        PMRA = kwargs.get("PMRA",0.)*mas/year
+        PMDEC = kwargs.get("PMDEC",0.)*mas/year
+        if D_x<=0. or D_y<=D_x or D_s<=D_y:
+            raise ValueError
+        #pulsar velocity vector
+        V_s_ra = PMRA*D_s
+        V_s_dec = PMDEC*D_s
+        V_s_vec = np.array([V_s_ra,V_s_dec])
+        #anisotropy axes
+        uv_x_par = np.array([np.cos(a_x), np.sin(a_x)])
+        uv_x_ort = np.array([-np.sin(a_x), np.cos(a_x)])
+        uv_y_par = np.array([np.cos(a_y), np.sin(a_y)])
+        uv_y_ort = np.array([-np.sin(a_y), np.cos(a_y)])
+        #observer velocity projected on first screen
+        V_p_par = np.dot(np.swapaxes(self.vtel_vec,0,1), uv_x_par)
+        V_p_ort = np.dot(np.swapaxes(self.vtel_vec,0,1), uv_x_ort)
+        #pulsar velocity projected on second screen
+        V_s_par = np.dot(V_s_vec, uv_y_par)
+        V_s_ort = np.dot(V_s_vec, uv_y_ort)
+        #derived quantities
+        D_xs = D_s-D_x
+        D_xy = D_y-D_x
+        D_ys = D_s-D_y
+        c = np.cos(a_x-a_y)
+        s = np.sin(a_x-a_y)
+        #independent screens effective quantities
+        Deff1_x = D_x*D_s/D_xs
+        Deff1_y = D_y*D_s/D_ys
+        Veff_x_vec = self.vtel_vec + D_x/D_xs*V_s_vec[:,na]
+        Veff1_x = np.dot(np.swapaxes(Veff_x_vec,0,1),uv_x_par) - D_s/D_xs*V_x
+        Veff_y_vec = self.vtel_vec + D_y/D_ys*V_s_vec[:,na]
+        Veff1_y = np.dot(np.swapaxes(Veff_y_vec,0,1),uv_y_par) - D_s/D_ys*V_y
+        #interacting screens effective quantities
+        Deff2_x = D_s*D_y*D_x/( D_y*D_xs - D_x*D_ys*c**2 )
+        Veff2_x = -( D_s*D_y*V_x - c*D_s*D_x*V_y - s*c*D_x*D_ys*V_p_ort - s*D_x*D_y*V_s_ort - (D_y*D_xs-D_x*D_ys*c**2)*V_p_par ) / ( D_y*D_xs - D_x*D_ys*c**2 )
+        Deff2_y = (D_s*D_xs*D_y**2/D_ys)/( D_y*D_xs - D_x*D_ys*c**2 )
+        Veff2_y = -( D_s*D_xs*D_y/D_ys*V_y - c*D_y*D_s*V_x + s*D_y*D_xs*V_p_ort + s*c*D_x*D_y*V_s_ort - (D_y*D_xs-D_x*D_ys*c**2)*D_y/D_ys*V_s_par ) / ( D_y*D_xs - D_x*D_ys*c**2 )
+        Vmod = -V_x + ( D_y*D_xs**2/D_ys*V_y + (D_x*D_xy*s**2-D_xy*D_y*D_xs/D_ys)*V_s_par - D_x*D_xy*s**2*V_s_ort - D_xs*D_xy*s*V_p_ort ) / ( D_y*D_xs*c - 2.*D_x*D_ys*s**2*c )
+        #D_mix = c*D_x*D_y*D_s/(D_y*D_xs - D_x*D_ys*c**2)
+        #arc parameters
+        zeta1_x = np.sqrt(1./(2.*v_c*Deff1_x))*np.abs(Veff1_x)
+        zeta1_y = np.sqrt(1./(2.*v_c*Deff1_y))*np.abs(Veff1_y)
+        zeta2_x = np.sqrt(1./(2.*v_c*Deff2_x))*np.abs(Veff2_x)
+        zeta2_y = np.sqrt(1./(2.*v_c*Deff2_y))*np.abs(Veff2_y)
+        zeta2_m = np.sqrt(Deff2_x/(2.*v_c))/D_x*Vmod
+        #return as dictionary
+        zetas = {"zeta1_x":zeta1_x,"zeta1_y":zeta1_y,"zeta2_x":zeta2_x,"zeta2_y":zeta2_y,"zeta2_m":zeta2_m,"Deff2_x":Deff2_x,"Veff2_x":Veff2_x,"Deff2_y":Deff2_y,"Veff2_y":Veff2_y}
+        
+        return zetas
         
