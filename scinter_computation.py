@@ -713,7 +713,10 @@ class Two1DScreens:
         
     def get_vtel(self,mjds,psrname):
         #get telescope velocity projected to pulsar
-        psr = SkyCoord.from_name(psrname)
+        if type(psrname) == str:
+            psr = SkyCoord.from_name(psrname)
+        else:
+            psr = psrname
         rarad = psr.ra.value * np.pi/180
         decrad = psr.dec.value * np.pi/180
         
@@ -910,7 +913,10 @@ class Two1DScreens:
 class Evolution_Two1DScreens:
     def  __init__(self,mjds,psrname):
         #load pulsar
-        pulsar = SkyCoord.from_name(psrname)
+        if type(psrname) == str:
+            pulsar = SkyCoord.from_name(psrname)
+        else:
+            pulsar = psrname
         rarad = pulsar.ra.value * np.pi/180
         decrad = pulsar.dec.value * np.pi/180
         
@@ -973,15 +979,17 @@ class Evolution_Two1DScreens:
         Deff2_y = (D_s*D_xs*D_y**2/D_ys)/( D_y*D_xs - D_x*D_ys*c**2 )
         Veff2_y = -( D_s*D_xs*D_y/D_ys*V_y - c*D_y*D_s*V_x + s*D_y*D_xs*V_p_ort + s*c*D_x*D_y*V_s_ort - (D_y*D_xs-D_x*D_ys*c**2)*D_y/D_ys*V_s_par ) / ( D_y*D_xs - D_x*D_ys*c**2 )
         Vmod = -V_x + ( D_y*D_xs**2/D_ys*V_y + (D_x*D_xy*s**2-D_xy*D_y*D_xs/D_ys)*V_s_par - D_x*D_xy*s**2*V_s_ort - D_xs*D_xy*s*V_p_ort ) / ( D_y*D_xs*c - 2.*D_x*D_ys*s**2*c )
-        #D_mix = c*D_x*D_y*D_s/(D_y*D_xs - D_x*D_ys*c**2)
+        D_mix = c*D_x*D_y*D_s/(D_y*D_xs - D_x*D_ys*c**2)
         #arc parameters
         zeta1_x = np.sqrt(1./(2.*v_c*Deff1_x))*np.abs(Veff1_x)
         zeta1_y = np.sqrt(1./(2.*v_c*Deff1_y))*np.abs(Veff1_y)
         zeta2_x = np.sqrt(1./(2.*v_c*Deff2_x))*np.abs(Veff2_x)
         zeta2_y = np.sqrt(1./(2.*v_c*Deff2_y))*np.abs(Veff2_y)
         zeta2_m = np.sqrt(Deff2_x/(2.*v_c))/D_x*Vmod
+        zeta2_fx = np.sqrt(Deff2_x/(2.*v_c))*np.abs((Veff2_x + D_mix/Deff2_y*Veff2_y)/(Deff2_x-D_mix/Deff2_y))
+        zeta2_fy = np.sqrt(Deff2_y/(2.*v_c))*np.abs((Veff2_y + D_mix/Deff2_x*Veff2_x)/(Deff2_y-D_mix/Deff2_x))
         #return as dictionary
-        zetas = {"zeta1_x":zeta1_x,"zeta1_y":zeta1_y,"zeta2_x":zeta2_x,"zeta2_y":zeta2_y,"zeta2_m":zeta2_m,"Deff2_x":Deff2_x,"Veff2_x":Veff2_x,"Deff2_y":Deff2_y,"Veff2_y":Veff2_y}
+        zetas = {"zeta1_x":zeta1_x,"zeta1_y":zeta1_y,"zeta2_x":zeta2_x,"zeta2_y":zeta2_y,"zeta2_m":zeta2_m,"Deff1_x":Deff1_x,"Veff1_x":Veff1_x,"Deff1_y":Deff1_y,"Veff1_y":Veff1_y,"Deff2_x":Deff2_x,"Veff2_x":Veff2_x,"Deff2_y":Deff2_y,"Veff2_y":Veff2_y,"zeta2_fx":zeta2_fx,"zeta2_fy":zeta2_fy}
         
         return zetas
         
