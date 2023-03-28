@@ -9,6 +9,7 @@ import progressbar
 from astropy.time import Time
 from astropy.coordinates import solar_system_ephemeris, get_body_barycentric, get_body, get_body_barycentric_posvel, SkyCoord, EarthLocation, Angle
 from astropy import units as u
+from scipy.interpolate import interp1d
 
 #import C++ library
 dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -154,7 +155,87 @@ lib.SumStatPoints_2scr_CP.argtypes = [
     ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
     ctypes.c_double,   # mu_CPx
     ctypes.c_double,   # mu_CPy
+    ctypes.c_double,   # p_ra
+    ctypes.c_double,   # p_dec
+    ctypes.c_double,   # s_ra
+    ctypes.c_double,   # s_dec
 ]
+
+lib.SumStatPoints_1scr_atTel_CP.argtypes = [
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+    ctypes.c_int,   # N_t
+    ctypes.c_int,   # N_nu
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+    ctypes.c_int,   # N_x
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
+    ctypes.c_double,   # D_x
+    ctypes.c_double,   # D_s
+    ctypes.c_double,   # V_x
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_ra [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_dec [N_t]
+    ctypes.c_double,   # V_s_ra
+    ctypes.c_double,   # V_s_dec
+    ctypes.c_double,   # a_x
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
+]
+
+lib.SumStatPoints_1scr_PS_CP.argtypes = [
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+    ctypes.c_int,   # N_t
+    ctypes.c_int,   # N_nu
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+    ctypes.c_int,   # N_x
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
+    ctypes.c_double,   # D_x
+    ctypes.c_double,   # D_s
+    ctypes.c_double,   # V_x
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_ra [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_dec [N_t]
+    ctypes.c_double,   # V_s_ra
+    ctypes.c_double,   # V_s_dec
+    ctypes.c_double,   # s_par
+    ctypes.c_double,   # a_x
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
+    ctypes.c_double,   # mu_CPx
+]
+
+lib.SumStatPoints_1scr_PS_CP_2D.argtypes = [
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+    ctypes.c_int,   # N_t
+    ctypes.c_int,   # N_nu
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+    ctypes.c_int,   # N_x
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x_ra [N_x]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x_dec [N_x]
+    ctypes.c_double,   # D_x
+    ctypes.c_double,   # D_s
+    ctypes.c_double,   # V_x_ra
+    ctypes.c_double,   # V_x_dec
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_ra [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_dec [N_t]
+    ctypes.c_double,   # V_s_ra
+    ctypes.c_double,   # V_s_dec
+    ctypes.c_double,   # s_ra
+    ctypes.c_double,   # s_dec
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
+    ctypes.c_double,   # mu_CPx
+]
+
 # lib.SumStatPoints_CPx.argtypes = [
     # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
     # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
@@ -228,6 +309,37 @@ lib.SumStatPoints_at_2ndSCR.argtypes = [
     ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
     ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
 ]
+
+#load C++ library for fast integration of 1D DM distribution for a single pixel
+lib.IntScreenSimple.argtypes = [
+    ctypes.c_int,   # N_th
+    ctypes.c_double,   # t
+    ctypes.c_double,   # nu
+    ctypes.c_double,   # V
+    ctypes.c_double,   # thF
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # th [N_th]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DM [N_th]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E
+]
+
+#load C++ library for fast integration of 1D DM distribution for a line in time
+lib.DMI_stripe.argtypes = [
+    ctypes.c_int,   # N_t
+    ctypes.c_int,   # N_th
+    ctypes.c_double,   # v_nu
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # thetas [N_th]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_disp [N_th]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_delay [N_th]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_Doppler [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t]
+]
+
+def IntScreenSimple(N_th,t,nu,V,thF,th,DM):
+    E = np.array([0.,0.])
+    lib.IntScreenSimple(N_th,t,nu,V,thF,th,DM,E)
+    E = E[0] + 1.0j*E[1]
+    return E
 
 class Screen1D:
     def __init__(self,pulsar,mjds,telescopes):
@@ -610,6 +722,303 @@ class SP_1DTDrift:
         N_D = len(psi_Drift)
         lib.SumStatPoints_TDrift(N_nu, N_th, N_t, N_D, self.slope*rad_to_psi/w, nu, self.mu, self.ph, psi, wt, psi_Drift, self.Drift, E_real, E_im)
         
+class OnTel_1DScreen:
+    def  __init__(self,**kwargs):
+        self.D_x = kwargs.get("D_x",1.)*pc
+        self.D_s = kwargs.get("D_s",3.)*pc
+        self.V_x = kwargs.get("V_x",0.)*1000.
+        PMRA = kwargs.get("PMRA",0.)*mas/year
+        PMDEC = kwargs.get("PMDEC",0.)*mas/year
+        self.V_s_ra = PMRA*self.D_s
+        self.V_s_dec = PMDEC*self.D_s
+        self.a_x = kwargs.get("a_x",0.)*np.pi/180.
+        #anisotropy axes
+        self.uv_x_par = np.array([np.cos(self.a_x), np.sin(self.a_x)])
+        self.uv_x_ort = np.array([-np.sin(self.a_x), np.cos(self.a_x)])
+        #pulsar velocity projected on second screen
+        v_psr_vec = np.array([PMRA, PMDEC])*self.D_s
+        self.V_s_par = np.dot(v_psr_vec, self.uv_x_par)
+        self.V_s_ort = np.dot(v_psr_vec, self.uv_x_ort)
+        
+        if self.D_x<=0. or self.D_s<=self.D_x:
+            raise ValueError
+        
+        self.x = np.empty(0,dtype=float)
+        self.mu_x = np.empty(0,dtype=float)
+        self.ph_x = np.empty(0,dtype=float)
+        
+        self.s = 0.
+        
+        self.mu_CPx = 0.
+    
+        self.noise = False
+        self.pulse_variation = False
+        
+        self.D_xs = self.D_s-self.D_x
+        
+    def add_SP(self,th=0.,mu=1.,ph=0.):
+        self.x = np.append(self.x,th*self.D_x)
+        self.mu_x = np.append(self.mu_x,mu)
+        self.ph_x = np.append(self.ph_x,ph)
+        
+    def add_CP(self,mu=1.):
+        self.mu_CPx = mu
+        
+    def add_source_offset(self,offset):
+        self.s = offset   
+            
+    def add_noise(self,**kwargs):
+        self.noise = True
+        #rms of noise in units of mean signal
+        self.noise_rms = kwargs.get("noise_rms",0.1)
+        
+    def add_pulse_variation(self,**kwargs):
+        self.pulse_variation = True
+        #radius of fractional variation around the mean amplitude
+        self.noise_pulse = kwargs.get("noise_pulse",0.2)
+        
+    def get_observer(self,mjds,psrname,telcoords):
+        #get telescope velocity projected to pulsar
+        if type(psrname) == str:
+            psr = SkyCoord.from_name(psrname)
+        else:
+            psr = psrname
+        rarad = psr.ra.value * np.pi/180
+        decrad = psr.dec.value * np.pi/180
+        
+        if (type(mjds) is list) or (type(mjds) is np.ndarray):
+            vtel_vec = np.zeros((2,len(mjds)))
+            p_vec = np.zeros((2,len(mjds)))
+            for i,mjd in enumerate(mjds):
+                time = Time(mjd, format='mjd')
+                pos_xyz, vel_xyz = get_body_barycentric_posvel('earth', time)
+                vx = vel_xyz.x.to(u.m/u.s).value
+                vy = vel_xyz.y.to(u.m/u.s).value
+                vz = vel_xyz.z.to(u.m/u.s).value
+                vtel_vec[0,i] = - vx * np.sin(rarad) + vy * np.cos(rarad)
+                vtel_vec[1,i] = - vx * np.sin(decrad) * np.cos(rarad) - vy * np.sin(decrad) * np.sin(rarad) + vz * np.cos(decrad)
+                pos_xyz, vel_xyz = telcoords.get_gcrs_posvel(time)
+                px = pos_xyz.x.to(u.m).value
+                py = pos_xyz.y.to(u.m).value
+                pz = pos_xyz.z.to(u.m).value
+                p_vec[0,i] = - px * np.sin(rarad) + py * np.cos(rarad)
+                p_vec[1,i] = - px * np.sin(decrad) * np.cos(rarad) - py * np.sin(decrad) * np.sin(rarad) + pz * np.cos(decrad)
+                
+        else:
+            mjd = mjds
+            time = Time(mjd, format='mjd')
+            pos_xyz, vel_xyz = get_body_barycentric_posvel('earth', time)
+            vx = vel_xyz.x.to(u.m/u.s).value
+            vy = vel_xyz.y.to(u.m/u.s).value
+            vz = vel_xyz.z.to(u.m/u.s).value
+            vtel_ra = - vx * np.sin(rarad) + vy * np.cos(rarad)
+            vtel_dec = - vx * np.sin(decrad) * np.cos(rarad) - vy * np.sin(decrad) * np.sin(rarad) + vz * np.cos(decrad)
+            vtel_vec = np.array([vtel_ra,vtel_dec])
+            pos_xyz, vel_xyz = telcoords.get_gcrs_posvel(time)
+            px = pos_xyz.x.to(u.m).value
+            py = pos_xyz.y.to(u.m).value
+            pz = pos_xyz.z.to(u.m).value
+            p_ra =  - px * np.sin(rarad) + py * np.cos(rarad)
+            p_dec = - px * np.sin(decrad) * np.cos(rarad) - py * np.sin(decrad) * np.sin(rarad) + pz * np.cos(decrad)
+            p_vec = np.array([p_ra,p_dec])
+            
+        return vtel_vec,p_vec
+        
+    def compute_DS(self,t,nu,mjds,psrname,telcoords):
+        N_t = len(t)
+        N_nu = len(nu)
+        N_x = len(self.x)
+        E_real = np.zeros(N_t*N_nu,dtype=float)
+        E_im = np.zeros(N_t*N_nu,dtype=float)
+        
+        vtel_vec,p_vec = self.get_observer(mjds,psrname,telcoords)
+        
+        lib.SumStatPoints_1scr_PS_CP(E_real,E_im,N_t,N_nu,t,nu,N_x,self.x,self.D_x,self.D_s,self.V_x,vtel_vec[0,:],vtel_vec[1,:],p_vec[0,:],p_vec[1,:],self.V_s_ra,self.V_s_dec,self.s,self.a_x,self.mu_x,self.ph_x,self.mu_CPx)
+        E = E_real.reshape((N_t,N_nu))+1.j*E_im.reshape((N_t,N_nu))
+        mean_signal = np.mean(np.abs(E))
+            
+        rng = np.random.default_rng(12345)
+        if self.pulse_variation:
+            variation = 1.-self.noise_pulse + (rng.random(N_t)-0.5)*2*self.noise_pulse
+            E = E*variation[:,na]
+        if self.noise:
+            E_noise = (rng.standard_normal((N_t,N_nu))+rng.standard_normal((N_t,N_nu))) * self.noise_rms*mean_signal
+            E = E + E_noise
+            
+        #DS = np.abs(E)**2
+        return E,p_vec
+        
+    def get_eta(self,mjd,psrname,telcoords,nu0):
+        
+        vtel_vec,p_vec = self.get_observer(mjd,psrname,telcoords)
+        V_p_par = np.dot(vtel_vec,self.uv_x_par)
+        
+        Deff = self.D_x*self.D_s/self.D_xs
+        
+        veff = V_p_par + self.D_x/self.D_xs*self.V_s_par - self.D_s/self.D_xs*self.V_x
+        
+        eta = v_c*Deff/(2.*nu0**2*veff**2)
+        
+        return Deff,veff,eta
+    
+    def get_pulse(self,t_min,t_max,N_ph):
+        t = np.linspace(t_min,t_max,num=N_ph,endpoint=False,dtype=float)
+        dt = t[1] - t[0]
+        profile = np.zeros_like(t)
+        Deff = self.D_x*self.D_s/self.D_xs
+        f = Deff/(2.*v_c)/self.D_x**2
+        for i_x,v_x in enumerate(self.x):
+            tau = f*v_x**2
+            i_t = int( (tau-t[0])/dt )
+            if 0<=i_t<N_ph:
+                profile[i_t] += self.mu_x[i_x]
+        return t,profile
+    
+class OnTel_2DScreen:
+    def  __init__(self,**kwargs):
+        self.D_x = kwargs.get("D_x",1.)*pc
+        self.D_s = kwargs.get("D_s",3.)*pc
+        self.V_x_ra = kwargs.get("V_x_ra",0.)*1000.
+        self.V_x_dec = kwargs.get("V_x_dec",0.)*1000.
+        self.psrname = kwargs.get("psrname","MISSING:psrname")
+        PMRA = kwargs.get("PMRA",0.)*mas/year
+        PMDEC = kwargs.get("PMDEC",0.)*mas/year
+        self.V_s_ra = PMRA*self.D_s
+        self.V_s_dec = PMDEC*self.D_s
+        #self.a_x = kwargs.get("a_x",0.)*np.pi/180.
+        #anisotropy axes
+        #self.uv_x_par = np.array([np.cos(self.a_x), np.sin(self.a_x)])
+        #self.uv_x_ort = np.array([-np.sin(self.a_x), np.cos(self.a_x)])
+        #pulsar velocity projected on second screen
+        #v_psr_vec = np.array([PMRA, PMDEC])*self.D_s
+        #self.V_s_par = np.dot(v_psr_vec, self.uv_x_par)
+        #self.V_s_ort = np.dot(v_psr_vec, self.uv_x_ort)
+        
+        if self.D_x<=0. or self.D_s<=self.D_x:
+            raise ValueError
+        
+        self.x_ra = np.empty(0,dtype=float)
+        self.x_dec = np.empty(0,dtype=float)
+        self.mu_x = np.empty(0,dtype=float)
+        self.ph_x = np.empty(0,dtype=float)
+        
+        self.s_ra = 0.
+        self.s_dec = 0.
+        
+        self.mu_CPx = 0.
+    
+        self.noise = False
+        self.pulse_variation = False
+        
+        self.D_xs = self.D_s-self.D_x
+        
+    def add_SP(self,th_ra=0.,th_dec=0.,mu=1.,ph=0.):
+        self.x_ra = np.append(self.x_ra,th_ra*self.D_x)
+        self.x_dec = np.append(self.x_dec,th_dec*self.D_x)
+        self.mu_x = np.append(self.mu_x,mu)
+        self.ph_x = np.append(self.ph_x,ph)
+        
+    def add_CP(self,mu=1.):
+        self.mu_CPx = mu
+        
+    def add_source_offset(self,offset_ra=0.,offset_dec=0.):
+        self.s_ra = offset_ra
+        self.s_dec = offset_dec
+            
+    def add_noise(self,**kwargs):
+        self.noise = True
+        #rms of noise in units of mean signal
+        self.noise_rms = kwargs.get("noise_rms",0.1)
+        
+    def add_pulse_variation(self,**kwargs):
+        self.pulse_variation = True
+        #radius of fractional variation around the mean amplitude
+        self.noise_pulse = kwargs.get("noise_pulse",0.2)
+        
+    def get_observer(self,mjds,telcoords):
+        #get telescope velocity projected to pulsar
+        if type(self.psrname) == str:
+            psr = SkyCoord.from_name(self.psrname)
+        else:
+            psr = self.psrname
+        rarad = psr.ra.value * np.pi/180
+        decrad = psr.dec.value * np.pi/180
+        
+        if (type(mjds) is list) or (type(mjds) is np.ndarray):
+            vtel_vec = np.zeros((2,len(mjds)))
+            p_vec = np.zeros((2,len(mjds)))
+            for i,mjd in enumerate(mjds):
+                time = Time(mjd, format='mjd')
+                pos_xyz, vel_xyz = get_body_barycentric_posvel('earth', time)
+                vx = vel_xyz.x.to(u.m/u.s).value
+                vy = vel_xyz.y.to(u.m/u.s).value
+                vz = vel_xyz.z.to(u.m/u.s).value
+                vtel_vec[0,i] = - vx * np.sin(rarad) + vy * np.cos(rarad)
+                vtel_vec[1,i] = - vx * np.sin(decrad) * np.cos(rarad) - vy * np.sin(decrad) * np.sin(rarad) + vz * np.cos(decrad)
+                pos_xyz, vel_xyz = telcoords.get_gcrs_posvel(time)
+                px = pos_xyz.x.to(u.m).value
+                py = pos_xyz.y.to(u.m).value
+                pz = pos_xyz.z.to(u.m).value
+                p_vec[0,i] = - px * np.sin(rarad) + py * np.cos(rarad)
+                p_vec[1,i] = - px * np.sin(decrad) * np.cos(rarad) - py * np.sin(decrad) * np.sin(rarad) + pz * np.cos(decrad)
+                
+        else:
+            mjd = mjds
+            time = Time(mjd, format='mjd')
+            pos_xyz, vel_xyz = get_body_barycentric_posvel('earth', time)
+            vx = vel_xyz.x.to(u.m/u.s).value
+            vy = vel_xyz.y.to(u.m/u.s).value
+            vz = vel_xyz.z.to(u.m/u.s).value
+            vtel_ra = - vx * np.sin(rarad) + vy * np.cos(rarad)
+            vtel_dec = - vx * np.sin(decrad) * np.cos(rarad) - vy * np.sin(decrad) * np.sin(rarad) + vz * np.cos(decrad)
+            vtel_vec = np.array([vtel_ra,vtel_dec])
+            pos_xyz, vel_xyz = telcoords.get_gcrs_posvel(time)
+            px = pos_xyz.x.to(u.m).value
+            py = pos_xyz.y.to(u.m).value
+            pz = pos_xyz.z.to(u.m).value
+            p_ra =  - px * np.sin(rarad) + py * np.cos(rarad)
+            p_dec = - px * np.sin(decrad) * np.cos(rarad) - py * np.sin(decrad) * np.sin(rarad) + pz * np.cos(decrad)
+            p_vec = np.array([p_ra,p_dec])
+            
+        return vtel_vec,p_vec
+        
+    def compute_DS(self,t,nu,mjds,telcoords):
+        N_t = len(t)
+        N_nu = len(nu)
+        N_x = len(self.x_ra)
+        E_real = np.zeros(N_t*N_nu,dtype=float)
+        E_im = np.zeros(N_t*N_nu,dtype=float)
+        
+        vtel_vec,p_vec = self.get_observer(mjds,telcoords)
+        
+        lib.SumStatPoints_1scr_PS_CP_2D(E_real,E_im,N_t,N_nu,t,nu,N_x,self.x_ra,self.x_dec,self.D_x,self.D_s,self.V_x_ra,self.V_x_ra,vtel_vec[0,:],vtel_vec[1,:],p_vec[0,:],p_vec[1,:],self.V_s_ra,self.V_s_dec,self.s_ra,self.s_dec,self.mu_x,self.ph_x,self.mu_CPx)
+        E = E_real.reshape((N_t,N_nu))+1.j*E_im.reshape((N_t,N_nu))
+        mean_signal = np.mean(np.abs(E))
+            
+        rng = np.random.default_rng(12345)
+        if self.pulse_variation:
+            variation = 1.-self.noise_pulse + (rng.random(N_t)-0.5)*2*self.noise_pulse
+            E = E*variation[:,na]
+        if self.noise:
+            E_noise = (rng.standard_normal((N_t,N_nu))+rng.standard_normal((N_t,N_nu))) * self.noise_rms*mean_signal
+            E = E + E_noise
+            
+        #DS = np.abs(E)**2
+        return E,p_vec
+    
+    def get_pulse(self,t_min,t_max,N_ph):
+        t = np.linspace(t_min,t_max,num=N_ph,endpoint=False,dtype=float)
+        dt = t[1] - t[0]
+        profile = np.zeros_like(t)
+        Deff = self.D_x*self.D_s/self.D_xs
+        f = Deff/(2.*v_c)/self.D_x**2
+        for i_x,v_x in enumerate(self.x):
+            tau = f*v_x**2
+            i_t = int( (tau-t[0])/dt )
+            if 0<=i_t<N_ph:
+                profile[i_t] += self.mu_x[i_x]
+        return t,profile
+        
 class Two1DScreens:
     def  __init__(self,**kwargs):
         self.D_x = kwargs.get("D_x",1.)*pc
@@ -645,6 +1054,11 @@ class Two1DScreens:
         
         self.mu_CPx = 0.
         self.mu_CPy = 0.
+        
+        self.p_ra = 0.
+        self.p_dec = 0.
+        self.s_ra = 0.
+        self.s_dec = 0.
     
         self.noise = False
         self.pulse_variation = False
@@ -670,6 +1084,14 @@ class Two1DScreens:
         
     def add_CPy(self,mu=0.):
         self.mu_CPy = mu
+        
+    def add_observer_offset(self,ra,dec):
+        self.p_ra = ra
+        self.p_dec = dec
+        
+    def add_source_offset(self,ra,dec):
+        self.s_ra = ra
+        self.s_dec = dec
             
     def add_noise(self,**kwargs):
         self.noise = True
@@ -683,7 +1105,7 @@ class Two1DScreens:
         
     def get_vm_old(self):
         Deff_12 = self.D_s*self.D_y*self.D_x/(self.D_y*self.D_xs-self.D_x*self.D_ys*self.c**2)
-        Deff_x = self.D_x*self.D_s/self.D_xs
+        #Deff_x = self.D_x*self.D_s/self.D_xs
         vm = -self.V_x + self.D_xs/self.D_ys*self.V_y*np.cos(self.a_x-self.a_y) - self.D_xy/self.D_ys*(self.V_s_ra*np.cos(self.a_x)+self.V_s_dec*np.sin(self.a_x))
         #vm = self.V_x - self.D_xs/self.D_ys*self.V_y*np.cos(self.a_x-self.a_y) - self.D_xy/self.D_ys*(self.V_s_ra*np.cos(self.a_x)+self.V_s_dec*np.sin(self.a_x))
         vm *= np.sqrt(Deff_12/(2.*v_c))/self.D_x
@@ -769,7 +1191,7 @@ class Two1DScreens:
         
         V_p_par = np.dot(vtel_vec, uv_x_par)
         V_p_ort = np.dot(vtel_vec, uv_x_ort)
-        V_s_par = np.dot(V_s_vec, uv_y_par)
+        #V_s_par = np.dot(V_s_vec, uv_y_par)
         V_s_ort = np.dot(V_s_vec, uv_y_ort)
         eta_xy = self.D_s*self.D_y/self.D_x*(self.D_y*self.D_xs-self.D_x*self.D_ys*self.c**2)
         eta_xy /= (self.D_s*self.D_y/self.D_x*self.V_x - self.c*self.D_s*self.V_y - self.s*self.c*self.D_ys*V_p_ort - self.s*self.D_y*V_s_ort - (self.D_y*self.D_xs-self.D_x*self.D_ys*self.c**2)/self.D_x*V_p_par)**2
@@ -787,8 +1209,10 @@ class Two1DScreens:
         
         vtel_vec = self.get_vtel(mjds,psrname)
         
+        #add support for specific telescopes like in single screen case
+        
         #lib.SumStatPoints_2scr(E_real,E_im,N_t,N_nu,t,nu,N_x,N_y,self.x,self.y,self.D_x,self.D_y,self.D_s,self.V_x,self.V_y,vtel_vec[0,:],vtel_vec[1,:],self.V_s_ra,self.V_s_dec,self.a_x,self.a_y,self.mu_x,self.mu_y,self.ph_x,self.ph_y)
-        lib.SumStatPoints_2scr_CP(E_real,E_im,N_t,N_nu,t,nu,N_x,N_y,self.x,self.y,self.D_x,self.D_y,self.D_s,self.V_x,self.V_y,vtel_vec[0,:],vtel_vec[1,:],self.V_s_ra,self.V_s_dec,self.a_x,self.a_y,self.mu_x,self.mu_y,self.ph_x,self.ph_y,self.mu_CPx,self.mu_CPy)
+        lib.SumStatPoints_2scr_CP(E_real,E_im,N_t,N_nu,t,nu,N_x,N_y,self.x,self.y,self.D_x,self.D_y,self.D_s,self.V_x,self.V_y,vtel_vec[0,:],vtel_vec[1,:],self.V_s_ra,self.V_s_dec,self.a_x,self.a_y,self.mu_x,self.mu_y,self.ph_x,self.ph_y,self.mu_CPx,self.mu_CPy,self.p_ra,self.p_dec,self.s_ra,self.s_dec)
         #if self.use_controid_x:
         #    lib.SumStatPoints_CPx(E_real,E_im,N_t,N_nu,t,nu,N_y,self.y,self.D_x,self.D_y,self.D_s,self.V_x,self.V_y,vtel_vec[0,:],vtel_vec[1,:],self.V_s_ra,self.V_s_dec,self.a_x,self.a_y,self.mu_CPx,self.mu_y,self.ph_y)
         E = E_real.reshape((N_t,N_nu))+1.j*E_im.reshape((N_t,N_nu))
@@ -909,6 +1333,61 @@ class Two1DScreens:
         E = E_real.reshape((N_t,N_nu,N_x))+1.j*E_im.reshape((N_t,N_nu,N_x))
         
         return E
+    
+class Two1DScreens_obsUnits(Two1DScreens):
+    def  __init__(self,**kwargs):
+        self.D_x = kwargs.get("D_x",1.)*pc
+        self.D_y = kwargs.get("D_y",2.)*pc
+        self.D_s = kwargs.get("D_s",3.)*pc
+        self.V_x = kwargs.get("V_x",0.)*1000.
+        self.V_y = kwargs.get("V_y",0.)*1000.
+        PMRA = kwargs.get("PMRA",0.)*mas/year
+        PMDEC = kwargs.get("PMDEC",0.)*mas/year
+        self.V_s_ra = PMRA*self.D_s
+        self.V_s_dec = PMDEC*self.D_s
+        self.a_x = kwargs.get("a_x",0.)*np.pi/180.
+        self.a_y = kwargs.get("a_y",0.)*np.pi/180.
+        #anisotropy axes
+        self.uv_x_par = np.array([np.cos(self.a_x), np.sin(self.a_x)])
+        self.uv_x_ort = np.array([-np.sin(self.a_x), np.cos(self.a_x)])
+        self.uv_y_par = np.array([np.cos(self.a_y), np.sin(self.a_y)])
+        self.uv_y_ort = np.array([-np.sin(self.a_y), np.cos(self.a_y)])
+        #pulsar velocity projected on second screen
+        v_psr_vec = np.array([PMRA, PMDEC])*self.D_s
+        self.V_s_par = np.dot(v_psr_vec, self.uv_y_par)
+        self.V_s_ort = np.dot(v_psr_vec, self.uv_y_ort)
+        
+        if self.D_x<=0. or self.D_y<=self.D_x or self.D_s<=self.D_y:
+            raise ValueError
+        
+        self.x = np.empty(0,dtype=float)
+        self.mu_x = np.empty(0,dtype=float)
+        self.ph_x = np.empty(0,dtype=float)
+        self.y = np.empty(0,dtype=float)
+        self.mu_y = np.empty(0,dtype=float)
+        self.ph_y = np.empty(0,dtype=float)
+        
+        self.mu_CPx = 0.
+        self.mu_CPy = 0.
+    
+        self.noise = False
+        self.pulse_variation = False
+        
+        self.D_xs = self.D_s-self.D_x
+        self.D_xy = self.D_y-self.D_x
+        self.D_ys = self.D_s-self.D_y
+        self.c = np.cos(self.a_x-self.a_y)
+        self.s = np.sin(self.a_x-self.a_y)
+        
+    def add_SPx(self,th=0.,mu=0.,ph=0.):
+        self.x = np.append(self.x,th*self.D_x)
+        self.mu_x = np.append(self.mu_x,mu)
+        self.ph_x = np.append(self.ph_x,ph)
+        
+    def add_SPy(self,th=0.,mu=0.,ph=0.):
+        self.y = np.append(self.y,th*self.D_y)
+        self.mu_y = np.append(self.mu_y,mu)
+        self.ph_y = np.append(self.ph_y,ph)
         
 class Evolution_Two1DScreens:
     def  __init__(self,mjds,psrname):
@@ -962,7 +1441,7 @@ class Evolution_Two1DScreens:
         V_s_ort = np.dot(V_s_vec, uv_y_ort)
         #derived quantities
         D_xs = D_s-D_x
-        D_xy = D_y-D_x
+        #D_xy = D_y-D_x
         D_ys = D_s-D_y
         c = np.cos(a_x-a_y)
         s = np.sin(a_x-a_y)
@@ -978,7 +1457,9 @@ class Evolution_Two1DScreens:
         Veff2_x = -( D_s*D_y*V_x - c*D_s*D_x*V_y - s*c*D_x*D_ys*V_p_ort - s*D_x*D_y*V_s_ort - (D_y*D_xs-D_x*D_ys*c**2)*V_p_par ) / ( D_y*D_xs - D_x*D_ys*c**2 )
         Deff2_y = (D_s*D_xs*D_y**2/D_ys)/( D_y*D_xs - D_x*D_ys*c**2 )
         Veff2_y = -( D_s*D_xs*D_y/D_ys*V_y - c*D_y*D_s*V_x + s*D_y*D_xs*V_p_ort + s*c*D_x*D_y*V_s_ort - (D_y*D_xs-D_x*D_ys*c**2)*D_y/D_ys*V_s_par ) / ( D_y*D_xs - D_x*D_ys*c**2 )
-        Vmod = -V_x + ( D_y*D_xs**2/D_ys*V_y + (D_x*D_xy*s**2-D_xy*D_y*D_xs/D_ys)*V_s_par - D_x*D_xy*s**2*V_s_ort - D_xs*D_xy*s*V_p_ort ) / ( D_y*D_xs*c - 2.*D_x*D_ys*s**2*c )
+        Vmod = -V_x + ( D_s*D_xs*V_y + (D_x*D_ys*c**2-D_xs*D_y)*V_s_par + D_x*D_ys*s*c*V_s_ort + D_xs*D_ys*s*V_p_ort ) / (D_ys*D_s*c)
+        #print("individual terms: Vx:{0} Vy:{1} Vsp:{2} Vso:{3} Vpo:{4}".format(-V_x, D_s*D_xs*V_y/(D_ys*D_s*c), (D_x*D_ys*c**2-D_xs*D_y)*V_s_par/(D_ys*D_s*c), D_x*D_ys*s*c*V_s_ort/(D_ys*D_s*c), D_xs*D_ys*s*V_p_ort/(D_ys*D_s*c)))
+        #Vmod = -V_x + ( D_y*D_xs**2/D_ys*V_y + (D_x*D_xy*s**2-D_xy*D_y*D_xs/D_ys)*V_s_par - D_x*D_xy*s**2*V_s_ort - D_xs*D_xy*s*V_p_ort ) / ( D_y*D_xs*c - 2.*D_x*D_ys*s**2*c )
         D_mix = c*D_x*D_y*D_s/(D_y*D_xs - D_x*D_ys*c**2)
         #arc parameters
         zeta1_x = np.sqrt(1./(2.*v_c*Deff1_x))*np.abs(Veff1_x)
@@ -986,10 +1467,235 @@ class Evolution_Two1DScreens:
         zeta2_x = np.sqrt(1./(2.*v_c*Deff2_x))*np.abs(Veff2_x)
         zeta2_y = np.sqrt(1./(2.*v_c*Deff2_y))*np.abs(Veff2_y)
         zeta2_m = np.sqrt(Deff2_x/(2.*v_c))/D_x*Vmod
-        zeta2_fx = np.sqrt(Deff2_x/(2.*v_c))*np.abs((Veff2_x + D_mix/Deff2_y*Veff2_y)/(Deff2_x-D_mix/Deff2_y))
-        zeta2_fy = np.sqrt(Deff2_y/(2.*v_c))*np.abs((Veff2_y + D_mix/Deff2_x*Veff2_x)/(Deff2_y-D_mix/Deff2_x))
+        zeta2_fx = np.sqrt(Deff2_x/(2.*v_c))*np.abs((Deff2_y*Veff2_x + D_mix*Veff2_y)/(Deff2_y*Deff2_x-D_mix**2))
+        zeta2_fy = np.sqrt(Deff2_y/(2.*v_c))*np.abs((Deff2_x*Veff2_y + D_mix*Veff2_x)/(Deff2_x*Deff2_y-D_mix**2))
         #return as dictionary
-        zetas = {"zeta1_x":zeta1_x,"zeta1_y":zeta1_y,"zeta2_x":zeta2_x,"zeta2_y":zeta2_y,"zeta2_m":zeta2_m,"Deff1_x":Deff1_x,"Veff1_x":Veff1_x,"Deff1_y":Deff1_y,"Veff1_y":Veff1_y,"Deff2_x":Deff2_x,"Veff2_x":Veff2_x,"Deff2_y":Deff2_y,"Veff2_y":Veff2_y,"zeta2_fx":zeta2_fx,"zeta2_fy":zeta2_fy}
+        zetas = {"zeta1_x":zeta1_x,"zeta1_y":zeta1_y,"zeta2_x":zeta2_x,"zeta2_y":zeta2_y,"zeta2_m":zeta2_m,"Deff1_x":Deff1_x,"Veff1_x":Veff1_x,"Deff1_y":Deff1_y,"Veff1_y":Veff1_y,"Deff2_x":Deff2_x,"Veff2_x":Veff2_x,"Deff2_y":Deff2_y,"D_mix":D_mix,"Veff2_y":Veff2_y,"zeta2_fx":zeta2_fx,"zeta2_fy":zeta2_fy}
         
         return zetas
+        
+class DM_integration_1D:
+    def __init__(self,dDM):
+        self.dDM = dDM
+        self.f_DM = 1./(4.*np.pi*eps0)*e**2/(me*v_c)*pc_per_cm3
+        
+    def set_pulsar(self,D_s,PMRA,PMDEC,skycoords):
+        V_s_ra = PMRA*D_s
+        V_s_dec = PMDEC*D_s
+        self.V_s_vec = np.array([V_s_ra,V_s_dec])
+        self.D_s = D_s
+        self.skycoords = skycoords
+    
+    def set_screen(self,D_x,a_x,V_x,th_min,th_max):
+        self.D_x = D_x
+        #self.a_x = a_x
+        self.V_x = V_x
+        self.th_min = th_min
+        self.th_max = th_max
+        self.uv_x_par = np.array([np.cos(a_x), np.sin(a_x)])
+    
+    def set_observer(self,mjd0,t,nu,telcoords):
+        self.mjds = mjd0 + t/day
+        self.t = t
+        self.nu = nu
+        self.telcoords = telcoords
+        
+    def _compute_observer(self):
+        print("Internally computing observer")
+        #telescope projected velocity and location
+        rarad = self.skycoords.ra.value * np.pi/180
+        decrad = self.skycoords.dec.value * np.pi/180
+        vtel_ra = np.zeros_like(self.mjds)
+        vtel_dec = np.zeros_like(self.mjds)
+        p_ra = np.zeros_like(self.mjds)
+        p_dec = np.zeros_like(self.mjds)
+        bar = progressbar.ProgressBar(maxval=len(self.mjds), widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+        bar.start()
+        for i,v_mjd in enumerate(self.mjds):
+            bar.update(i)
+            time = Time(v_mjd, format='mjd')
+            pos_xyz, vel_xyz = get_body_barycentric_posvel('earth', time)
+            vx = vel_xyz.x.to(u.m/u.s).value
+            vy = vel_xyz.y.to(u.m/u.s).value
+            vz = vel_xyz.z.to(u.m/u.s).value
+            pos_xyz, vel_xyz = self.telcoords.get_gcrs_posvel(time)
+            px = pos_xyz.x.to(u.m).value
+            py = pos_xyz.y.to(u.m).value
+            pz = pos_xyz.z.to(u.m).value
+            #vx += vel_xyz.x.value
+            #vy += vel_xyz.y.value
+            #vz += vel_xyz.z.value
+            vtel_ra[i] = - vx * np.sin(rarad) + vy * np.cos(rarad)
+            vtel_dec[i] = - vx * np.sin(decrad) * np.cos(rarad) - vy * np.sin(decrad) * np.sin(rarad) + vz * np.cos(decrad)
+            p_ra[i] =  - px * np.sin(rarad) + py * np.cos(rarad)
+            p_dec[i] = - px * np.sin(decrad) * np.cos(rarad) - py * np.sin(decrad) * np.sin(rarad) + pz * np.cos(decrad)
+        bar.finish()
+        self.V_p_vec = np.swapaxes(np.array([vtel_ra,vtel_dec]),0,1)
+        self.p_vec = np.swapaxes(np.array([p_ra,p_dec]),0,1)
+        
+    def _compute_screen(self,tol):
+        print("Internally computing screen")
+        D_xs = self.D_s-self.D_x
+        self.Deff = self.D_x*self.D_s/D_xs
+        self.Veff = -self.D_s/D_xs*self.V_x + np.dot(self.V_p_vec,self.uv_x_par) + self.D_x/D_xs*np.dot(self.V_s_vec,self.uv_x_par)
+        self.p = np.dot(self.p_vec,self.uv_x_par)
+        
+        th_big = np.max([np.abs(self.th_min),np.abs(self.th_max)])
+        dth_max = tol/(np.max(self.nu)/v_c*self.Deff*th_big)
+        N_DM = len(self.dDM)
+        th_in = np.linspace(self.th_min,self.th_max,num=N_DM,endpoint=True)
+        dth_in = np.diff(th_in).mean()
+        N_th = int(np.rint(dth_in/dth_max)*N_DM)
+        print("Interpolating to {0} instead of {1} steps of DM.".format(N_th,N_DM))
+        self.int_dDM = interp1d(th_in,self.dDM, kind='cubic')
+        self.thetas = np.linspace(self.th_min,self.th_max,num=N_th,endpoint=True)
+        
+        
+    def get_phases(self,tol):
+        self._compute_observer()
+        self._compute_screen(tol)
+        
+        phi_disp = -self.f_DM*self.int_dDM(self.thetas)/np.mean(self.nu)
+        phi_delay = np.pi*self.Deff/v_c*self.thetas**2*np.mean(self.nu)
+        #phi_Doppler = -2.*np.pi/v_c*(self.Veff*self.t+self.p)
+        
+        return self.thetas,phi_disp,phi_delay
+    
+    def _integrate_sample(self,inds_t,inds_nu,DMgrad_max):
+        dth = np.diff(self.thetas).mean()
+        N_th = len(self.thetas)
+        dDM = self.int_dDM(self.thetas)
+        nu_mean = np.mean(self.nu)
+        mean_Phi = -self.f_DM*dDM/nu_mean + np.pi*self.Deff/v_c*self.thetas**2*nu_mean -2.*np.pi/v_c*np.mean(self.Veff*self.t+self.p)*nu_mean*self.thetas
+        DMgrad = np.diff(mean_Phi)/dth
+        if np.abs(DMgrad[0])<DMgrad_max:
+            inds_th = [0]
+        else:
+            inds_th = []
+        bar = progressbar.ProgressBar(maxval=N_th-1, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+        bar.start()
+        for i_th in range(N_th-1):
+            bar.update(i_th)
+            if np.abs(DMgrad[i_th])<DMgrad_max:
+                inds_th.append(i_th+1)
+        bar.finish()
+        print("Fraction kept: {0}".format(len(inds_th)/N_th))
+        
+        phi_disp = -self.f_DM*dDM[inds_th]
+        phi_delay = np.pi*self.Deff/v_c*self.thetas[inds_th]**2
+        phi_Doppler = -2.*np.pi/v_c*(self.Veff[inds_t]*self.t[inds_t]+self.p[inds_t])
+        
+        N_t = len(inds_t)
+        N_nu = len(inds_nu)
+        N_th = len(inds_th)
+        E = np.empty((N_t,N_nu),dtype=complex)
+        bar = progressbar.ProgressBar(maxval=N_nu, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+        bar.start()
+        i_bar = 0
+        for i_nu in inds_nu:
+            bar.update(i_bar)
+            v_nu = self.nu[i_nu]
+            E_real = np.zeros((N_t),dtype='float64')
+            E_im = np.zeros((N_t),dtype='float64')
+            lib.DMI_stripe(N_t,N_th,v_nu,self.thetas[inds_th],phi_disp,phi_delay,phi_Doppler,E_real,E_im)
+            E[:,i_bar] = (E_real+1.j*E_im)*dth
+            i_bar += 1
+        bar.finish()
+        return E
+    
+    def _integrate(self,DMgrad_max):
+        dth = np.diff(self.thetas).mean()
+        N_th = len(self.thetas)
+        dDM = self.int_dDM(self.thetas)
+        nu_mean = np.mean(self.nu)
+        mean_Phi = -self.f_DM*dDM/nu_mean + np.pi*self.Deff/v_c*self.thetas**2*nu_mean -2.*np.pi/v_c*np.mean(self.Veff*self.t+self.p)*nu_mean*self.thetas
+        DMgrad = np.diff(mean_Phi)/dth
+        if np.abs(DMgrad[0])<DMgrad_max:
+            inds_th = [0]
+        else:
+            inds_th = []
+        for i_th in range(N_th-1):
+            if np.abs(DMgrad[i_th])<DMgrad_max:
+                inds_th.append(i_th+1)
+        print("Fraction kept: {0}".format(len(inds_th)/N_th))
+        
+        phi_disp = -self.f_DM*dDM[inds_th]
+        phi_delay = np.pi*self.Deff/v_c*self.thetas[inds_th]**2
+        phi_Doppler = -2.*np.pi/v_c*(self.Veff*self.t+self.p)
+        
+        N_t = len(self.t)
+        N_nu = len(self.nu)
+        N_th = len(inds_th)
+        E = np.empty((N_t,N_nu),dtype=complex)
+        bar = progressbar.ProgressBar(maxval=N_nu, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+        bar.start()
+        for i_nu in range(N_nu):
+            bar.update(i_nu)
+            v_nu = self.nu[i_nu]
+            E_real = np.zeros((N_t),dtype='float64')
+            E_im = np.zeros((N_t),dtype='float64')
+            lib.DMI_stripe(N_t,N_th,v_nu,self.thetas[inds_th],phi_disp,phi_delay,phi_Doppler,E_real,E_im)
+            E[:,i_nu] = (E_real+1.j*E_im)*dth
+        bar.finish()
+        return E
+    
+    def compute_numInt(self,tol,acc):
+        print("Computing Observer")
+        self._compute_observer()
+        print("Computing Screen")
+        self._compute_screen(tol)
+        
+        print("Computing Stationary Phase Approximation")
+        
+        N_t = len(self.t)
+        N_nu = len(self.nu)
+        
+        inds_t = [0,1,2,3,4,N_t-5,N_t-4,N_t-3,N_t-2,N_t-1]
+        inds_nu = [0,1,2,3,4,N_nu-5,N_nu-4,N_nu-3,N_nu-2,N_nu-1]
+        
+        E_ref = self._integrate_sample(inds_t,inds_nu,np.inf)
+        v_ref = np.mean(np.abs(E_ref))
+        
+        DMgrad_max = 1.e+11
+        upper = 0.
+        lower = 0.
+        while True:
+            E_test = self._integrate_sample(inds_t,inds_nu,DMgrad_max)
+            relerr = np.mean(np.abs((E_ref-E_test)/v_ref))
+            print("{0} at {1}".format(relerr,DMgrad_max))
+            if relerr>acc:
+                lower = DMgrad_max
+                if upper == 0.:
+                    DMgrad_max = 10.*DMgrad_max
+                else:
+                    DMgrad_max = (upper+DMgrad_max)/2.
+            elif relerr<0.9*acc:
+                upper = DMgrad_max
+                DMgrad_max = (lower+DMgrad_max)/2.
+            else:
+                print("Optimal max gradient found: {0}".format(DMgrad_max))
+                break
+                
+        E = self._integrate(DMgrad_max)
+        return E
+        
+    def compute_numInt_fraction(self,tol,fraction):
+        print("Computing Observer")
+        self._compute_observer()
+        print("Computing Screen")
+        self._compute_screen(tol)
+        
+        dth = np.diff(self.thetas).mean()
+        N_th = len(self.thetas)
+        dDM = self.int_dDM(self.thetas)
+        nu_mean = np.mean(self.nu)
+        mean_Phi = -self.f_DM*dDM/nu_mean + np.pi*self.Deff/v_c*self.thetas**2*nu_mean -2.*np.pi/v_c*np.mean(self.Veff*self.t+self.p)*nu_mean*self.thetas
+        DMgrad = np.sort(np.abs(np.diff(mean_Phi)/dth))
+        assert DMgrad[0]<DMgrad[-1]
+        i_max = int(np.rint(fraction*N_th-1))
+        
+        DMgrad_max = DMgrad[i_max]
+                
+        E = self._integrate(DMgrad_max)
+        return E
         

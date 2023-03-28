@@ -163,8 +163,20 @@ class intensity:
         self.DS = self.DS[i0_t:i1_t,i0_nu:i1_nu]
         self.recalculate()
             
-    def downsample(self):
-        pass
+    def downsample(self,**kwargs):
+        t_sampling = kwargs.get("t_sampling",1)
+        nu_sampling = kwargs.get("nu_sampling",1)
+        self.DS = block_reduce(self.DS, block_size=(t_sampling,nu_sampling), func=np.mean)
+        coordinates = np.array([self.t,self.t])
+        coordinates = block_reduce(coordinates, block_size=(1,t_sampling), func=np.mean, cval=self.t[-1])
+        self.t = coordinates[0,:]
+        coordinates = np.array([self.mjd,self.mjd])
+        coordinates = block_reduce(coordinates, block_size=(1,t_sampling), func=np.mean, cval=self.mjd[-1])
+        self.mjd = coordinates[0,:]
+        coordinates = np.array([self.nu,self.nu])
+        coordinates = block_reduce(coordinates, block_size=(1,nu_sampling), func=np.mean, cval=self.nu[-1])
+        self.nu = coordinates[0,:]
+        self.recalculate()
         
     def slice_zeta(self,**kwargs):
         tchunk = kwargs.get("tchunk",60)
@@ -515,6 +527,94 @@ class intensity:
                 
         return t_var,eta_var,eta_err_var,nu_var,etas_arr,errs_arr
         
+class visibility:
+    type = "visibility"
+    
+    def __init__(self,data_path):
+        """
+        override this function to load custom data
+        self.DS: dynamic spectrum time*frequency
+        self.nu: frequency
+        self.t: time in seconds since start of observation
+        self.mjd: time in MJD
+        """
+        # - load data
+        self.data_path = data_path
+        file_data = os.path.join(data_path,"DS.npz")
+        lib_data = np.load(file_data)
+        self.nu = lib_data["nu"]
+        self.t = lib_data["t"]
+        self.mjd = lib_data["mjd"]
+        self.DS = lib_data["DS"]
+        self.phase = lib_data["phase"]
+        # - provide some useful parameters
+        self.recalculate()
+        
+    def recalculate(self):
+        #provide some useful parameters
+        self.N_t,self.N_nu = self.DS.shape
+        self.dt = self.t[1]-self.t[0]
+        self.dnu = self.nu[1]-self.nu[0]
+        self.t_min = self.t[0]
+        self.t_max = self.t[-1]
+        self.nu_min = self.nu[0]
+        self.nu_max = self.nu[-1]
+        self.timespan = self.t_max-self.t_min
+        self.bandwidth = self.nu_max-self.nu_min
+        self.t0 = np.mean(self.t)
+        self.nu0 = np.mean(self.nu)
+        self.mjd_min = self.mjd[0]
+        self.mjd_max = self.mjd[-1]
+        self.mjd0 = np.mean(self.mjd)
+        
+    def crop(self,t_min=None,t_max=None,nu_min=None,nu_max=None,N_t=None,N_nu=None): #missing option for mask, profile and bpass
+            # - create subset of data
+        if t_min==None:
+            i0_t = 0
+        else:
+            i0_t = np.argmin(np.abs(self.t-t_min))
+        if t_max==None:
+            i1_t = self.N_t
+            if not N_t==None:
+                if N_t <= i1_t:
+                    i1_t = N_t
+                else:
+                    print("/!\ N_t too large! Using available data instead.")
+        else:
+            i1_t = np.argmin(np.abs(self.t-t_max))
+            if not N_t==None and N_t!=i1_t:
+                print("/!\ N_t incompatible with t_max! Using only t_max instead.")
+        if nu_min==None:
+            i0_nu = 0
+        else:
+            i0_nu = np.argmin(np.abs(self.nu-nu_min))
+        if nu_max==None:
+            i1_nu = self.N_nu
+            if not N_nu==None:
+                if N_nu <= i1_nu:
+                    i1_nu = N_nu
+                else:
+                    print("/!\ N_nu too large! Using available data instead.")
+        else:
+            i1_nu = np.argmin(np.abs(self.nu-nu_max))
+            if not N_nu==None and N_nu!=i1_nu:
+                print("/!\ N_nu incompatible with nu_max! Using only nu_max instead.")
+        if i0_t!=0 or i1_t!=self.N_t or i0_nu!=0 or i1_nu!=self.N_nu:
+            self.mjd = self.mjd[i0_t:i1_t]
+            self.t = self.t[i0_t:i1_t]
+            self.nu = self.nu[i0_nu:i1_nu]
+            self.DS = self.DS[i0_t:i1_t,i0_nu:i1_nu]
+            self.phase = self.phase[i0_t:i1_t,i0_nu:i1_nu]
+            self.recalculate()
+            
+    def slice(self,i0_t=0,i1_t=-1,i0_nu=0,i1_nu=-1):
+        self.mjd = self.mjd[i0_t:i1_t]
+        self.t = self.t[i0_t:i1_t]
+        self.nu = self.nu[i0_nu:i1_nu]
+        self.DS = self.DS[i0_t:i1_t,i0_nu:i1_nu]
+        self.phase = self.phase[i0_t:i1_t,i0_nu:i1_nu]
+        self.recalculate()
+        
 class secondary_spectrum:
     type = "secondary spectrum"
     
@@ -532,6 +632,8 @@ class secondary_spectrum:
         self.N_fD,self.N_tau = self.SS.shape
         self.dfD = self.fD[1] - self.fD[0]
         self.dtau = self.tau[1] - self.tau[0]
+        self.fD_max = np.max(self.fD)
+        self.tau_max = np.max(self.tau)
         
 class conjugate_spectrum:
     type = "conjugate spectrum"
@@ -702,6 +804,15 @@ class generic_intensity(intensity):
         self.DS = DS
         self.mjd = mjd0 + (self.t-np.mean(self.t))/day
         self.recalculate()
+        
+class generic_visibility(visibility):
+    def __init__(self,t,nu,DS,phase,mjd0):
+        self.t = t
+        self.nu = nu
+        self.DS = DS
+        self.phase = phase
+        self.mjd = mjd0 + (self.t-np.mean(self.t))/day
+        self.recalculate()
 
 class SecSpec_FFT(secondary_spectrum):
     def __init__(self,DS,**kwargs):
@@ -730,6 +841,52 @@ class SecSpec_FFT(secondary_spectrum):
             self.tau = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,DS.dnu))
             conj_spec = np.fft.fftshift(np.fft.fft2(data,axes=(0,1)),axes=(0,1))
             self.SS = np.abs(conj_spec)**2
+        elif DS.type == "visibility":
+            #- prepare data
+            data = DS.DS*np.exp(1j*DS.phase)
+            self.fD = np.fft.fftshift(np.fft.fftfreq(DS.N_t,DS.dt))
+            self.tau = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,DS.dnu))
+            conj_spec = np.fft.fftshift(np.fft.fft2(data,axes=(0,1)),axes=(0,1))
+            self.SS = np.abs(conj_spec)**2
+        else:
+            raise TypeError
+            
+class SecSpec_zeta(secondary_spectrum):
+    def __init__(self,DS,**kwargs):
+        self.data_path = kwargs.get("data_path",None)
+        if self.data_path==None:
+            self.compute(DS,kwargs)
+        else:
+            if not os.path.exists(self.data_path):
+                os.makedirs(self.data_path)
+            file_data = os.path.join(self.data_path,"SecSpec_zeta.npz")
+            if DS!=None: #not os.path.exists(file_data):
+                self.compute(DS,kwargs)
+                np.savez(file_data,fD=self.fD,tau=self.tau,SS=self.SS)
+            else:
+                lib_data = np.load(file_data)
+                self.fD = lib_data["fD"]
+                self.tau = lib_data["tau"]
+                self.SS = lib_data["SS"]
+        self.recalculate()
+        
+    def compute(self,DS,kwargs):
+        self.zeta = kwargs.get("zeta",1.)
+        t0 = kwargs.get("t0",DS.t0)
+        if (DS.type == "intensity") or (DS.type == "secondary dynamic spectrum"):
+            #- prepare data
+            data = (DS.DS - np.mean(DS.DS))*np.exp(-2.0j*np.pi*self.zeta**2*DS.nu[na,:]*(DS.t[:,na]-t0)**2)
+            self.fD = np.fft.fftshift(np.fft.fftfreq(DS.N_t,DS.dt))
+            self.tau = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,DS.dnu))
+            conj_spec = np.fft.fftshift(np.fft.fft2(data,axes=(0,1)),axes=(0,1))
+            self.SS = np.abs(conj_spec)**2
+        elif DS.type == "visibility":
+            #- prepare data
+            data = DS.DS*np.exp(1j*DS.phase)*np.exp(-2.0j*np.pi*self.zeta**2*DS.nu[na,:]*(DS.t[:,na]-t0)**2)
+            self.fD = np.fft.fftshift(np.fft.fftfreq(DS.N_t,DS.dt))
+            self.tau = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,DS.dnu))
+            conj_spec = np.fft.fftshift(np.fft.fft2(data,axes=(0,1)),axes=(0,1))
+            self.SS = np.abs(conj_spec)**2
         else:
             raise TypeError
 
@@ -752,14 +909,15 @@ class SecSpec_NuT(secondary_spectrum):
                     recompute = False
             if recompute:
                 self.compute(DS,kwargs)
-                np.savez(file_data,fD=self.fD,tau=self.tau,SS=self.SS,nu0=self.nu0)
+                np.savez(file_data,fD=self.fD,tau=self.tau,SS=self.SS,nu0=self.nu0,mjd0=self.mjd0)
             else:
                 if os.path.exists(file_data):
                     lib_data = np.load(file_data)
                     self.fD = lib_data["fD"]
                     self.tau = lib_data["tau"]
                     self.SS = lib_data["SS"]
-                    self.nu0 = lib_data["nu0"]
+                    self.nu0 = lib_data.get("nu0",None)
+                    self.mjd0 = lib_data.get("mjd0",None)
                 else:
                     raise KeyError
         self.recalculate()
@@ -767,12 +925,14 @@ class SecSpec_NuT(secondary_spectrum):
     def compute(self,DS,kwargs):
         if not DS.type == "intensity":
             raise TypeError
+        self.mjd0 = kwargs.get("mjd0",DS.mjd0)
         self.nu0 = kwargs.get("nu0",DS.nu0)
         self.fD = np.fft.fftshift(np.fft.fftfreq(DS.N_t,DS.dt))
         self.tau = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,DS.dnu))
         #- prepare data
         data = DS.DS - np.mean(DS.DS)
-        tt = (DS.t-DS.t0)/self.nu0
+        #tt = (DS.t-DS.t0)/self.nu0
+        tt = (DS.t-DS.t0+(DS.mjd0-self.mjd0)*day)/self.nu0
         hss_real = np.zeros((DS.N_t*DS.N_nu),dtype='float64')
         hss_im = np.zeros((DS.N_t*DS.N_nu),dtype='float64')
         lib.NuT(DS.N_t,DS.N_nu,DS.N_t,tt.astype('float64'),DS.nu.astype('float64'),self.fD.astype('float64'),data.astype('float64').flatten(),hss_real,hss_im)
@@ -782,21 +942,32 @@ class SecSpec_NuT(secondary_spectrum):
 class SecSpec_Lambda(secondary_spectrum):
     def __init__(self,DS,**kwargs):
         self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","SecSpec_Lambda.npz")
         if self.data_path==None:
            self.compute(DS,kwargs)
         else:
             if not os.path.exists(self.data_path):
                 os.makedirs(self.data_path)
-            file_data = os.path.join(self.data_path,"SecSpec_Lambda.npz")
-            if DS!=None: #not os.path.exists(file_data):
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
                 self.compute(DS,kwargs)
-                np.savez(file_data,fD=self.fD,tau=self.tau,SS=self.SS) #,Lambda=self.Lambda
+                np.savez(file_data,fD=self.fD,tau=self.tau,Beta=self.Beta,SS=self.SS)
             else:
-                lib_data = np.load(file_data)
-                self.fD = lib_data["fD"]
-                self.tau = lib_data["tau"]
-                self.SS = lib_data["SS"]
-                #self.Lambda = lib_data["Lambda"]
+                if os.path.exists(file_data):
+                    lib_data = np.load(file_data)
+                    self.Beta = lib_data["Beta"]
+                    self.fD = lib_data["fD"]
+                    self.tau = lib_data["tau"]
+                    self.SS = lib_data["SS"]
+                else:
+                    raise KeyError
         self.recalculate()
     
     def compute(self,DS,kwargs):
@@ -810,6 +981,7 @@ class SecSpec_Lambda(secondary_spectrum):
         L = v_c/DS.nu
         nu_L = np.linspace(L[-1],L[0],num=DS.N_nu,endpoint=True)
         #L_tau = self.tau * (v_c/self.Lambda**2)
+        self.Beta = np.fft.fftshift(np.fft.fftfreq(len(nu_L),nu_L[1]-nu_L[0]))
         
         for i_t in range(DS.N_t):
             ip = interp.interp1d(L,data[i_t,:])
@@ -822,6 +994,119 @@ class SecSpec_Lambda(secondary_spectrum):
         # lib.Lambda(DS.N_t,DS.N_nu,DS.N_nu,DS.t.astype('float64'),L.astype('float64'),L_tau.astype('float64'),data.astype('float64').flatten(),hss_real,hss_im)
         # hss = hss_real.reshape((DS.N_t,DS.N_nu))+1.j*hss_im.reshape((DS.N_t,DS.N_nu))
         # self.SS = np.abs(np.fft.fftshift(np.fft.fft(hss,axis=0),axes=0))**2
+        
+class DynSpec_patchnorm(intensity):
+    def __init__(self,DS,**kwargs):
+        self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","DynSpec_patchnorm.npz")
+        if self.data_path==None:
+           self.compute(DS,kwargs)
+        else:
+            if not os.path.exists(self.data_path):
+                os.makedirs(self.data_path)
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
+                self.compute(DS,kwargs)
+                np.savez(file_data,nu=self.nu,t=self.t,mjd=self.mjd,DS=self.DS)
+            else:
+                if os.path.exists(file_data):
+                    lib_data = np.load(file_data)
+                    self.nu = lib_data["nu"]
+                    self.t = lib_data["t"]
+                    self.mjd = lib_data["mjd"]
+                    self.DS = lib_data["DS"]
+                else:
+                    raise KeyError
+        self.recalculate()
+    
+    def compute(self,DS,kwargs):
+        if not DS.type == "intensity":
+            raise TypeError
+        
+        tchunk = kwargs.get("tchunk",50)
+        nuchunk = kwargs.get("nuchunk",300)
+        fD_min = kwargs.get("fD_min",0.*mHz)
+        fD_max = kwargs.get("fD_max",1.*mHz)
+        tau_min = kwargs.get("tau_min",0.*mus)
+        tau_max = kwargs.get("tau_max",1.*mus)
+        
+        def find_chunks(N,Nc):
+            """
+            N : length of list
+            Nc : Maximum number of entries per chunk
+            """
+            #number of chunks
+            Ns = (2*N)//Nc
+            #optimal shift of chunk (float)
+            shift = N/(Ns+1.)
+            #create list by rounding to integers
+            starts = [np.rint(i*shift).astype(int) for i in range(Ns)]
+            #mids = [np.rint((i+1)*shift).astype(int) for i in range(Ns)]
+            ends = [np.rint((i+2)*shift).astype(int) for i in range(Ns)]
+            return starts,ends,int(shift)
+        
+        self.DS = np.zeros_like(DS.DS)
+        #- split into overlapping chunks
+        t_starts,t_ends,t_shift = find_chunks(DS.N_t,tchunk)
+        nu_starts,nu_ends,nu_shift = find_chunks(DS.N_nu,nuchunk)
+        N_tchunk = len(t_starts)
+        N_nuchunk = len(nu_starts)
+            
+        #main computation
+        bar = progressbar.ProgressBar(maxval=N_nuchunk, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+        bar.start()
+        for fc in range(N_nuchunk):
+            bar.update(fc)
+            #select Chunk
+            l_nuchunk = nu_ends[fc]-nu_starts[fc]
+            nu = DS.nu[nu_starts[fc]:nu_ends[fc]]
+            # combine by windowing
+            fmsk = np.ones(l_nuchunk)
+            if fc>0:
+                fmsk[:nu_shift] = np.sin((np.pi/2)*np.linspace(0,nu_shift-1,nu_shift)/nu_shift)**2
+            if fc<N_nuchunk-1:
+                fmsk[-nu_shift:] = np.cos((np.pi/2)*np.linspace(0,nu_shift-1,nu_shift)/nu_shift)**2
+            for tc in range(N_tchunk):
+                t = DS.t[t_starts[tc]:t_ends[tc]]
+                l_tchunk = t_ends[tc]-t_starts[tc]
+                tmsk = np.ones(l_tchunk)
+                dspec = DS.DS[t_starts[tc]:t_ends[tc],nu_starts[fc]:nu_ends[fc]]
+                #dspec = dspec - np.mean(dspec)
+                #compute secondary spectrum
+                SS = np.fft.fftshift(np.fft.fft2(dspec))
+                fD = np.fft.fftshift(np.fft.fftfreq(len(t),DS.dt))
+                tau = np.fft.fftshift(np.fft.fftfreq(len(nu),DS.dnu))
+                #normalize by mean amplitude of chosen region in SecSpec
+                is_fD = np.squeeze(np.argwhere(np.logical_and(fD<fD_max,fD>fD_min)))
+                is_tau = np.squeeze(np.argwhere(np.logical_and(tau<tau_max,tau>tau_min)))
+                #print(is_fD)
+                #print(is_tau)
+                SS_region = np.abs(SS)[is_fD,:]
+                SS_region = SS_region[:,is_tau]
+                norm = np.mean(SS_region)
+                if norm>0.:
+                    model = dspec/norm
+                else:
+                    model = dspec*0.
+                #Combine chunks
+                if tc>0:
+                    tmsk[:t_shift] = np.sin((np.pi/2)*np.linspace(0,t_shift-1,t_shift)/t_shift)**2
+                if tc<N_tchunk-1:
+                    tmsk[-t_shift:] = np.cos((np.pi/2)*np.linspace(0,t_shift-1,t_shift)/t_shift)**2
+                self.DS[t_starts[tc]:t_ends[tc],nu_starts[fc]:nu_ends[fc]] += model*tmsk[:,na]*fmsk[na,:]
+        bar.finish()
+        
+        self.t = DS.t
+        self.nu = DS.nu
+        self.mjd = DS.mjd
+        self.DS = self.DS/np.std(self.DS)
         
 class staufD:
     type = "staufD diagram"
@@ -1054,8 +1339,8 @@ class staufD:
         y_fit = np.linspace(ymin,ymax,num=201,endpoint=True)
         x_u = np.abs(y_fit)*2.*nu0_data*(slider_zeta.val*(1.+slider_err.val/100.))
         x_d = np.abs(y_fit)*2.*nu0_data*(slider_zeta.val*(1.-slider_err.val/100.))
-        fit_plot_u, = ax.plot(x_u,y_fit,color='red',linestyle='-',markersize=0,alpha=0.5,linewidth=3)
-        fit_plot_d, = ax.plot(x_d,y_fit,color='red',linestyle='-',markersize=0,alpha=0.5,linewidth=3)
+        fit_plot_u, = ax.plot(x_u,y_fit,color='white',linestyle='-',markersize=0,alpha=0.5,linewidth=3)
+        fit_plot_d, = ax.plot(x_d,y_fit,color='white',linestyle='-',markersize=0,alpha=0.5,linewidth=3)
         
         def update_zeta(event):
             x_u = np.abs(y_fit)*2.*nu0_data*(slider_zeta.val*(1.+slider_err.val/100.))
@@ -1622,6 +1907,75 @@ class thth_coherent:
         self.thth[pnts] = SS[fD_inv[pnts],tau_inv[pnts]]
         self.thth *= np.sqrt(np.abs(2*eta*(th2-th1))) #flux conervation
         
+class thth_coherent_arc:
+    type = "coherent thth diagram"
+    #to do
+    
+    def __init__(self,DS,**kwargs):
+        """
+        self.thth: thth diagram theta*theta
+        self.th: angular position
+        self.th_fD: angular position in units of implied Doppler
+        """
+        self.data_path = kwargs.get("data_path",None)
+        if self.data_path==None:
+           self.compute(DS,kwargs)
+        else:
+            if not os.path.exists(self.data_path):
+                os.makedirs(self.data_path)
+            file_data = os.path.join(self.data_path,"thth_coherent.npz")
+            if DS!=None:
+                self.compute(DS,kwargs)
+                np.savez(file_data,theta=self.th,th_fD=self.th_fD,thth=self.thth)
+            else:
+                lib_data = np.load(file_data)
+                self.th_fD = lib_data["th_fD"]
+                self.th = lib_data["theta"]
+                self.thth = lib_data["thth"]
+        self.recalculate()
+        
+    def recalculate(self):
+        #provide some useful parameters
+        self.N_th = len(self.th)
+        
+    def compute(self,DS,kwargs):
+        #load and check data
+        if not DS.type == "intensity":
+            raise TypeError
+            
+        N_th = kwargs.get("N_th",101)
+        fD_max = kwargs.get("fD_max",1.*mHz)
+        npad = kwargs.get("npad",3)
+        Deff = kwargs.get("Deff",120.*pc)
+        veff = kwargs.get("veff",20.*kms)
+        
+        #preparations
+        fD_to_rad = v_c/DS.nu0/veff
+        self.th_fD = np.linspace(-fD_max,fD_max,num=N_th,dtype=float,endpoint=True)
+        self.th = self.th_fD*fD_to_rad
+        th1 = np.ones((N_th,N_th))*self.th
+        th2 = th1.T
+        rad_to_fD = veff*DS.nu0/v_c
+        eta = v_c*Deff/(2.*DS.nu0**2*veff**2)
+        self.thth = np.zeros((N_th,N_th), dtype=complex)
+        
+        #main computation
+        dspec = DS.DS - np.mean(DS.DS)
+        #Pad
+        dspec_pad=np.pad(dspec,((0,npad*dspec.shape[0]),(0,npad*dspec.shape[1])),mode='constant',constant_values=dspec.mean())
+        #compute secondary spectrum
+        SS = np.fft.fftshift(np.fft.fft2(dspec_pad))
+        fD = np.fft.fftshift(np.fft.fftfreq((npad+1)*DS.N_t,DS.dt))
+        tau = np.fft.fftshift(np.fft.fftfreq((npad+1)*DS.N_nu,DS.dnu))
+        #Compute thth diagram
+        dfD = np.diff(fD).mean()
+        dtau = np.diff(tau).mean()
+        tau_inv = ((eta*((th1*rad_to_fD)**2-(th2*rad_to_fD)**2)-tau[0]+dtau/2)//dtau).astype(int)
+        fD_inv = ((th1*rad_to_fD-th2*rad_to_fD-fD[0]+dfD/2)//dfD).astype(int)
+        pnts = (tau_inv > 0) * (tau_inv < tau.shape[0]) * (fD_inv > 0) * (fD_inv < fD.shape[0])
+        self.thth[pnts] = SS[fD_inv[pnts],tau_inv[pnts]]
+        self.thth *= np.sqrt(np.abs(2*eta*(th2-th1))) #flux conervation
+        
 class DS_backtrafo(intensity):
     type = "dynamic spectrum from backtransformation of conjugate spectrum"
     
@@ -1873,6 +2227,7 @@ class brightness_dist:
         self.data_path = kwargs.get("data_path",None)
         overwrite = kwargs.get("overwrite",True)
         file_name = kwargs.get("file_name","mu.npz")
+        self.file_name = file_name
         if self.data_path==None:
             self.compute(DS,kwargs)
         else:
@@ -1899,6 +2254,44 @@ class brightness_dist:
                     raise KeyError
         self.recalculate()
         
+    def crop(self,t_min=None,t_max=None,nu_min=None,nu_max=None,N_t=None,N_nu=None): #missing option for mask, profile and bpass
+            # - create subset of data
+        if t_min==None:
+            i0_t = 0
+        else:
+            i0_t = np.argmin(np.abs(self.t-t_min))
+        if t_max==None:
+            i1_t = self.N_t
+            if not N_t==None:
+                if N_t <= i1_t:
+                    i1_t = N_t
+                else:
+                    print("/!\ N_t too large! Using available data instead.")
+        else:
+            i1_t = np.argmin(np.abs(self.t-t_max))
+            if not N_t==None and N_t!=i1_t:
+                print("/!\ N_t incompatible with t_max! Using only t_max instead.")
+        if nu_min==None:
+            i0_nu = 0
+        else:
+            i0_nu = np.argmin(np.abs(self.nu-nu_min))
+        if nu_max==None:
+            i1_nu = self.N_nu
+            if not N_nu==None:
+                if N_nu <= i1_nu:
+                    i1_nu = N_nu
+                else:
+                    print("/!\ N_nu too large! Using available data instead.")
+        else:
+            i1_nu = np.argmin(np.abs(self.nu-nu_max))
+            if not N_nu==None and N_nu!=i1_nu:
+                print("/!\ N_nu incompatible with nu_max! Using only nu_max instead.")
+        if i0_t!=0 or i1_t!=self.N_t or i0_nu!=0 or i1_nu!=self.N_nu:
+            self.t = self.t[i0_t:i1_t]
+            self.nu = self.nu[i0_nu:i1_nu]
+            self.mu = self.mu[:,i0_t:i1_t,i0_nu:i1_nu]
+            self.recalculate()
+        
     def recalculate(self):
         #provide some useful parameters
         self.N_stau = len(self.stau)
@@ -1919,6 +2312,15 @@ class brightness_dist:
             self.compute_eigenvector(DS,kwargs)
         elif method=="backtrafo":
             self.compute_backtrafo(DS,kwargs)
+        elif method=="rotated":
+            self.stau = np.empty(2)
+            self.t = np.empty(2)
+            self.nu = np.empty(2)
+            self.mu = np.empty(2)
+            
+    def save_eigenvectors(self):
+        file_data = os.path.join(self.data_path,self.file_name)
+        np.savez(file_data,stau=self.stau,t=self.t,nu=self.nu,mu=self.mu)
             
     def compute_eigenvector(self,DS,kwargs):
         N_th = kwargs.get("N_th",100)
@@ -1970,7 +2372,8 @@ class brightness_dist:
                 thth = np.zeros((N_th,N_th), dtype=complex)
                 pnts = (tau_inv > 0) * (tau_inv < tau.shape[0]) * (fD_inv > 0) * (fD_inv < fD.shape[0])
                 thth[pnts] = SS[fD_inv[pnts],tau_inv[pnts]]
-                thth *= np.sqrt(np.abs(2*eta*(th2-th1))) #flux conervation
+                #thth *= np.sqrt(np.abs(2*eta*(th2-th1))) #flux conervation
+                thth *= np.abs(2*eta*(th2-th1)) #Jacobian
                 thth -= np.tril(thth) #make hermitian
                 thth += np.conjugate(np.triu(thth).T)
                 thth -= np.diag(np.diag(thth))
@@ -1984,6 +2387,93 @@ class brightness_dist:
                 self.mu[:,tc,fc] = np.nan_to_num(solution)
         bar.finish()
         
+    def invert_modulation(self,**kwargs):
+        
+        method = kwargs.get("method","eigenvector")
+        recompute = kwargs.get("recompute",True)
+        subfile = "DS_nomod.npz"
+        file_data = os.path.join(self.data_path,subfile)
+        if recompute:
+            if method=="eigenvector":
+                N_th,N_tchunk,N_nuchunk = self.mu.shape
+                tchunk = kwargs.get("tchunk",50)
+                nuchunk = kwargs.get("nuchunk",300)
+                npad = kwargs.get("npad",3)
+                self.eta1400 = kwargs.get("eta",0.1) #at 1400 MHz
+                
+                #preparations
+                stau_max = self.stau[-1]
+                tau_max = stau_max**2
+                #self.stau = np.linspace(-stau_max,stau_max,num=N_th,dtype=float,endpoint=True)
+                #self.nu = np.zeros(N_nuchunk,dtype=float)
+                #self.t = np.zeros(N_tchunk,dtype=float)
+                #self.mu = np.empty((N_th,N_tchunk,N_nuchunk),dtype=complex)
+                
+                N_t = int(N_tchunk*tchunk)
+                N_nu = int(N_nuchunk*nuchunk)
+                dspec_model = np.empty((N_t,N_nu),dtype=float)
+                dt = (self.t[1]-self.t[0])/tchunk
+                t_model = np.arange(N_t)*dt
+                dnu = (self.nu[1]-self.nu[0])/nuchunk
+                nu_model = np.arange(N_nu)*dnu
+                
+                modulation = np.mean(np.abs(self.mu),axis=2)
+                mean_images = np.mean(np.abs(self.mu),axis=(1,2))
+                modulation_normed = modulation / mean_images[:,na]
+                mu_clean = self.mu/modulation_normed[:,:,na]
+                
+                fD = np.fft.fftshift(np.fft.fftfreq((npad+1)*tchunk,dt))
+                tau = np.fft.fftshift(np.fft.fftfreq((npad+1)*nuchunk,dnu))
+                dfD = np.diff(fD).mean()
+                dtau = np.diff(tau).mean()
+                fD_edges = np.linspace(fD[0]-dfD/2.,fD[-1]+dfD/2.,fD.shape[0]+1,endpoint=True)
+                tau_edges = np.linspace(tau[0]-dtau/2.,tau[-1]+dtau/2.,tau.shape[0]+1,endpoint=True)
+                
+                #main computation
+                bar = progressbar.ProgressBar(maxval=N_nuchunk*N_tchunk, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+                bar.start()
+                for fc in range(N_nuchunk):
+                    fc0 = fc*nuchunk
+                    fc1 = fc0+nuchunk
+                    #select Chunk and determine curvature
+                    eta = self.eta1400*(1400.0*MHz)**2/self.nu[fc]**2
+                    stau_to_fD = 1./np.sqrt(eta)
+                    fD_map = (self.stau[na,:]-self.stau[:,na])*stau_to_fD
+                    tau_map = (self.stau[na,:]**2-self.stau[:,na]**2)
+                    for tc in range(N_tchunk):
+                        bar.update(tc+fc*N_tchunk)
+                        tc0 = tc*tchunk
+                        tc1 = tc0+tchunk
+                        #Construct 1D theta-theta
+                        thth1D = np.zeros((N_th,N_th), dtype=complex)
+                        thth1D[thth1D.shape[0]//2,:] = mu_clean[:,tc,fc]
+                        with np.errstate(all='ignore'):
+                            recov=np.histogram2d(np.ravel(fD_map),
+                                         np.ravel(tau_map),
+                                         bins=(fD_edges,tau_edges),
+                                         weights=np.ravel(thth1D/np.sqrt(np.abs(2*eta*fD_map.T))).real)[0] +\
+                                    np.histogram2d(np.ravel(fD_map),
+                                                 np.ravel(tau_map),
+                                                 bins=(fD_edges,tau_edges),
+                                                 weights=np.ravel(thth1D/np.sqrt(np.abs(2*eta*fD_map.T))).imag)[0]*1j
+                            norm=np.histogram2d(np.ravel(fD_map),
+                                                 np.ravel(tau_map),
+                                                 bins=(fD_edges,tau_edges))[0]
+                            recov /= norm
+                        recov = np.nan_to_num(recov)
+                        model_E = np.fft.ifft2(np.fft.ifftshift(recov))[:tchunk,:nuchunk]
+                        dspec_model[tc0:tc1,fc0:fc1] = np.abs(model_E)**2
+                bar.finish()
+                
+                np.savez(file_data,t_model=t_model,nu_model=nu_model,dspec_model=dspec_model)
+        else:
+            lib_data = np.load(file_data)
+            t_model = lib_data["t_model"]
+            nu_model = lib_data["nu_model"]
+            dspec_model = lib_data["dspec_model"]
+            
+        return t_model,nu_model,dspec_model
+        
     def compute_backtrafo(self,DS,kwargs):
     
         self.N_th = kwargs.get("N_th",100)
@@ -1996,6 +2486,8 @@ class brightness_dist:
         fD_width_outer = kwargs.get("fD_width_outer",2.)
         tau_width_inner = kwargs.get("tau_width_inner",1.)
         tau_width_outer = kwargs.get("tau_width_outer",2.)
+        tau_center = kwargs.get("tau_center",1.)
+        fD_center = kwargs.get("fD_center",1.)
         stripe = kwargs.get("stripe",False)
         
         #preparations
@@ -2003,6 +2495,13 @@ class brightness_dist:
         fD = np.fft.fftshift(np.fft.fftfreq(DS.N_t,DS.dt))
         tau = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,DS.dnu))
         CS = np.fft.fftshift(np.fft.fft2(DS.DS,axes=(0,1)),axes=(0,1))
+        for i_fD,v_fD in enumerate(fD):
+            if np.abs(v_fD)<fD_center:
+                CS[i_fD,:] = 0.
+            else:
+                for i_tau,v_tau in enumerate(tau):
+                    if np.abs(v_tau)<tau_center:
+                        CS[i_fD,i_tau] = 0.
         N_fD,N_tau = CS.shape
         dfD = np.diff(fD).mean()
         dtau = np.diff(tau).mean()
@@ -2070,7 +2569,7 @@ class brightness_dist:
     def fit_modulation_speed(self,**kwargs):
         a_min = kwargs.get("a_min",1.)
         a_max = kwargs.get("a_max",3.)
-        threshold_y = kwargs.get("threshold_y",0.92)
+        threshold_y = kwargs.get("threshold_y",0.0)
         threshold_x = kwargs.get("threshold_x",np.inf)
         threshold_stau = kwargs.get("threshold_stau",0.)
         fraction = kwargs.get("fraction",0.5)
@@ -2084,8 +2583,10 @@ class brightness_dist:
                 recompute = False
             
         if recompute:
-            modulation = np.swapaxes(np.mean(np.abs(self.mu),axis=2)**2,0,1)
-            modulation_normed = modulation / np.mean(np.abs(self.mu),axis=(1,2))[na,:]**2
+            #modulation = np.swapaxes(np.mean(np.abs(self.mu),axis=2)**2,0,1)
+            #modulation_normed = modulation / np.mean(np.abs(self.mu),axis=(1,2))[na,:]**2
+            modulation = np.swapaxes(np.mean(np.abs(self.mu),axis=2),0,1)
+            modulation_normed = modulation / np.mean(np.abs(self.mu),axis=(1,2))[na,:]
             
             N_a = int((self.t[-1]-self.t[0])*(a_max-a_min)/self.dstau)
             a = np.linspace(a_min,a_max,num=N_a,endpoint=True)
@@ -2156,6 +2657,7 @@ class brightness_dist:
             vm_error = lib["vm_error"]
         
         return modulation,modulation_normed,a,Hough,fit_stau,fit_curve,measure,vm_result,vm_error
+        
         
 class Efield:
     type = "electric field"
@@ -2251,6 +2753,8 @@ class Efield:
         tau_max = kwargs.get("tau_max",1.*mus)
         zeta = kwargs.get("zeta",1.)
         
+        mus_object = kwargs.get("provide_mus",None)
+        
         def find_chunks(N,Nc):
             """
             N : length of list
@@ -2288,6 +2792,13 @@ class Efield:
         # htchunk = int(tchunk/2)
         # N_tchunk=(DS.N_t-htchunk)//htchunk
         # N_nuchunk=(DS.N_nu-hnuchunk)//hnuchunk
+        
+        save_mus = False
+        if mus_object != None:
+            save_mus = True
+            mu = np.empty((N_th,N_tchunk,N_nuchunk),dtype=complex)
+            ts = np.empty(N_tchunk,dtype=float)
+            nus = np.empty(N_nuchunk,dtype=float)
         
         ###reference from similar code:
         # stau_max = np.sqrt(tau_max)
@@ -2345,7 +2856,8 @@ class Efield:
                 thth = np.zeros((N_th,N_th), dtype=complex)
                 pnts = (tau_inv > 0) * (tau_inv < tau.shape[0]) * (fD_inv > 0) * (fD_inv < fD.shape[0])
                 thth[pnts] = SS[fD_inv[pnts],tau_inv[pnts]]
-                thth *= np.sqrt(np.abs(2*eta*(th2-th1))) #flux conervation
+                #thth *= np.sqrt(np.abs(2*eta*(th2-th1))) #flux conervation
+                thth *= np.abs(2*eta*(th2-th1)) #Jacobian
                 thth -= np.tril(thth) #make hermitian
                 thth += np.conjugate(np.triu(thth).T)
                 thth -= np.diag(np.diag(thth))
@@ -2389,12 +2901,24 @@ class Efield:
                 if tc<N_tchunk-1:
                     tmsk[-t_shift:] = np.cos((np.pi/2)*np.linspace(0,t_shift-1,t_shift)/t_shift)**2
                 self.Efield[t_starts[tc]:t_ends[tc],nu_starts[fc]:nu_ends[fc]] += model_E*tmsk[:,na]*fmsk[na,:]
+                
+                if save_mus:
+                    nus[fc] = nu0
+                    ts[tc] = np.mean(t)
+                    mu[:,tc,fc] = eigenvectors*np.exp(1.j*phi)
         bar.finish()
         
         self.t = DS.t
         self.nu = DS.nu
         self.amplitude = np.abs(self.Efield)
         self.phase = np.angle(self.Efield)
+        
+        if save_mus:
+            mus_object.stau = staus
+            mus_object.t = ts
+            mus_object.nu = nus
+            mus_object.mu = mu
+            mus_object.save_eigenvectors()
         
 class generic_Efield(Efield):
     def __init__(self,t,nu,EF):
@@ -2867,12 +3391,12 @@ class ACF_DS:
                     recompute = False
             if recompute:
                 self.compute(DS,kwargs)
-                np.savez(file_data,x=self.x,y=self.y,ACF=self.ACF)
+                np.savez(file_data,t_shift=self.t_shift,nu_shift=self.nu_shift,ACF=self.ACF)
             else:
                 if os.path.exists(file_data):
                     lib_data = np.load(file_data)
-                    self.x = lib_data["x"]
-                    self.y = lib_data["y"]
+                    self.t_shift = lib_data["t_shift"]
+                    self.nu_shift = lib_data["nu_shift"]
                     self.ACF = lib_data["ACF"]
                 else:
                     raise KeyError
@@ -2880,28 +3404,88 @@ class ACF_DS:
         
     def recalculate(self):
         #provide some useful parameters
-        self.N_x,self.N_y = self.ACF.shape
+        self.N_t,self.N_nu = self.ACF.shape
         
     def compute(self,DS,kwargs):
         if not DS.type == "intensity":
             raise TypeError
-        x_sampling = kwargs.get("x_sampling",1)
-        y_sampling = kwargs.get("y_sampling",1)
+        compute_direct = kwargs.get("compute_direct",False)
+        if compute_direct:
+            t_sampling = kwargs.get("t_sampling",1)
+            nu_sampling = kwargs.get("nu_sampling",1)
+            
+            # - downsampling
+            data = block_reduce(DS.DS, block_size=(t_sampling,nu_sampling), func=np.mean)
+            coordinates = np.array([DS.t,DS.t])
+            coordinates = block_reduce(coordinates, block_size=(1,t_sampling), func=np.mean, cval=DS.t[-1])
+            self.t_shift = coordinates[0,:]
+            coordinates = np.array([DS.nu,DS.nu])
+            coordinates = block_reduce(coordinates, block_size=(1,nu_sampling), func=np.mean, cval=DS.nu[-1])
+            self.nu_shift = coordinates[0,:]
+            
+            self.t_shift = self.t_shift - np.mean(self.t_shift)
+            self.nu_shift = self.nu_shift - np.mean(self.nu_shift)
+            data = (data - np.mean(data))/np.std(data)
+            
+            self.ACF = scipy.signal.correlate2d(data,data,mode='same')
+        else:
+            self.ACF = np.fft.fftshift(np.fft.ifft2( np.fft.fft2(DS.DS) * np.fft.fft2(DS.DS).conj() ))
+            self.ACF = np.real(self.ACF)
+            self.t_shift = np.linspace(-DS.timespan/2., DS.timespan/2., len(DS.t), endpoint=False)
+            self.nu_shift = np.linspace(-DS.bandwidth/2., DS.bandwidth/2., len(DS.nu), endpoint=False)
+            
+    def fit_tscale(self,**kwargs):
+        # Take slice through center of cross-correlation along time axis
+        # Ignoring zero component with noise-noise correlation
+        ACF_shifted = np.fft.ifftshift(self.ACF)
+        ccorr_t = ACF_shifted[:,1] + ACF_shifted[:,-1]
+        ccorr_t -= np.median(ccorr_t)
+        ccorr_t /= np.max(ccorr_t)
+        ccorr_t_shift = np.copy(ccorr_t)
+        ccorr_t = np.fft.fftshift(ccorr_t)
         
-        # - downsampling
-        data = block_reduce(DS.DS, block_size=(x_sampling,y_sampling), func=np.mean)
-        coordinates = np.array([DS.t,DS.t])
-        coordinates = block_reduce(coordinates, block_size=(1,x_sampling), func=np.mean, cval=DS.t[-1])
-        self.x = coordinates[0,:]
-        coordinates = np.array([DS.nu,DS.nu])
-        coordinates = block_reduce(coordinates, block_size=(1,y_sampling), func=np.mean, cval=DS.nu[-1])
-        self.y = coordinates[0,:]
+        def Gaussian(x, sigma, A, C):
+            return A*np.exp( -x**2 / (2*sigma**2) ) + C
+            
+        # Fit the slices in frequency and time with a Gaussian
+        # p0 values are just a starting guess
+        dt = self.t_shift[1] - self.t_shift[0]
+        is_sigma = np.argwhere(ccorr_t_shift<np.exp(-1./2.))
+        i_sigma = np.min(is_sigma)
+        p0 = [i_sigma*dt, 1., 0]
+        popt, pcov = curve_fit(Gaussian, self.t_shift, ccorr_t, p0=p0)
+        tscint = np.sqrt(2) * abs(popt[0])
+        tscinterr = np.sqrt(2) * np.sqrt(pcov[0,0])
+        t_model_ACF = Gaussian(self.t_shift, popt[0], popt[1], popt[2])
         
-        self.x = self.x - np.mean(self.x)
-        self.y = self.y - np.mean(self.y)
-        data = (data - np.mean(data))/np.std(data)
+        return tscint,tscinterr,ccorr_t,t_model_ACF
         
-        self.ACF = scipy.signal.correlate2d(data,data,mode='same')
+    def fit_nuscale(self,**kwargs):
+        # Take slice through center of cross-correlation along time axis
+        # Ignoring zero component with noise-noise correlation
+        ACF_shifted = np.fft.ifftshift(self.ACF)
+        ccorr_nu = ACF_shifted[1] + ACF_shifted[-1]
+        ccorr_nu -= np.median(ccorr_nu)
+        ccorr_nu /= np.max(ccorr_nu)
+        ccorr_nu_shift = np.copy(ccorr_nu)
+        ccorr_nu = np.fft.fftshift(ccorr_nu)
+        
+        def Gaussian(x, sigma, A, C):
+            return A*np.exp( -x**2 / (2*sigma**2) ) + C
+            
+        # Fit the slices in frequency and time with a Gaussian
+        # p0 values are just a starting guess
+        dnu = self.nu_shift[1] - self.nu_shift[0]
+        is_sigma = np.argwhere(ccorr_nu_shift<np.exp(-1./2.))
+        i_sigma = np.min(is_sigma)
+        p0 = [i_sigma*dnu, 1., 0]
+        popt, pcov = curve_fit(Gaussian, self.nu_shift, ccorr_nu, p0=p0)
+        nuscint = np.sqrt(2*np.log(2)) * abs(popt[0])
+        nuscinterr = np.sqrt(2*np.log(2)) * np.sqrt(pcov[0,0])
+        nu_model_ACF = Gaussian(self.nu_shift, popt[0], popt[1], popt[2])
+        
+        return nuscint,nuscinterr,ccorr_nu,nu_model_ACF
+        
         
 class EV_backtrafo(eigenvectors):
         
@@ -3016,9 +3600,14 @@ class zeta_eigenvalues:
                     lib_data = np.load(file_data)
                     self.zetas = lib_data["zetas"]
                     self.EV = lib_data["EV"]
-                    self.EVs = lib_data["EVs"]
-                    self.mjd = lib_data["mjd"]
-                    self.t = lib_data["t"]
+                    try:
+                        self.t = lib_data["t"]
+                        self.mjd = lib_data["mjd"]
+                        self.EVs = lib_data["EVs"]
+                    except:
+                        self.t = np.zeros(1)
+                        self.mjd = np.zeros_like(self.t)
+                        self.EVs = np.zeros((len(self.t),len(self.zetas)))
                 else:
                     raise KeyError
         self.recalculate()
@@ -3112,6 +3701,7 @@ class zeta_eigenvalues:
                         thth[pnts] = SS[fd_inv[pnts],tau_inv[pnts]]
                         eta = 1./(2.*f0_evo*zeta)**2
                         thth *= np.sqrt(np.abs(2*eta*stau_to_fD*(th2-th1))) #flux conervation
+                        #thth *= np.abs(2*eta*stau_to_fD*(th2-th1)) #Jacobian
                         thth /= np.mean(np.abs(thth))
                         if 1:
                             thth -= np.tril(thth) #make hermitian
@@ -3125,8 +3715,12 @@ class zeta_eigenvalues:
                         ##Find first eigenvector and value
                         v0 = thth[thth.shape[0]//2,:]
                         v0 /= np.sqrt((np.abs(v0)**2).sum())
-                        w,V = eigsh(thth,1,v0=v0,which='LA')
-                        eigs_zeta[i] = np.abs(w[0])
+                        try:
+                            w,V = eigsh(thth,1,v0=v0,which='LA')
+                            eigs_zeta[i] = np.abs(w[0])
+                        except:
+                            print("did not find any eigenvalues to sufficient accuracy")
+                            eigs_zeta[i] = np.nan
                         
                     if not np.isnan(eigs_zeta).any():
                         self.EV += eigs_zeta
@@ -3269,3 +3863,159 @@ class zeta_eigenvalues:
         
         return zeta1_fit,zeta1_sig,zeta2_fit,zeta2_sig,self.zetas,fit_result
            
+class refracted_scintles:
+    type = "refracted_scintles"
+    def __init__(self,DS,**kwargs):
+        self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","refracted_scintles.npz")
+        if self.data_path==None:
+            self.compute(DS,kwargs)
+        else:
+            if not os.path.exists(self.data_path):
+                os.makedirs(self.data_path)
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
+                self.compute(DS,kwargs)
+                np.savez(file_data,t=self.t,DMp=self.DMp,Hough=self.Hough)
+            else:
+                if os.path.exists(file_data):
+                    lib_data = np.load(file_data)
+                    self.t = lib_data["t"]
+                    self.DMp = lib_data["DMp"]
+                    self.Hough = lib_data["Hough"]
+                else:
+                    raise KeyError
+        self.recalculate()
+        
+    def recalculate(self):
+        #provide some useful parameters
+        self.N_t,self.N_DMp = self.Hough.shape
+        
+    def compute(self,DS,kwargs):
+        if not DS.type == "intensity":
+            raise TypeError
+        shift_max = kwargs.get("shift_max",1.*minute)
+        N_DMp = kwargs.get("N_DMp",11)
+        
+        self.t = np.copy(DS.t)
+        N_t = DS.N_t
+        N_nu = DS.N_nu
+        dt = DS.dt
+        Dt = DS.timespan
+        DM_slope_max = shift_max/(1./DS.nu[0]**2-1./DS.nu[-1]**2)
+        self.DMp = np.linspace(-DM_slope_max,DM_slope_max,num=N_DMp,endpoint=True)
+        self.Hough = np.empty((N_t,N_DMp),dtype=float)
+        is_nu = np.arange(N_nu)
+        
+        bar = progressbar.ProgressBar(maxval=N_t, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+        bar.start()
+        for i_t0,t0 in enumerate(self.t):
+            bar.update(i_t0)
+            for i_DMp,v_DMp in enumerate(self.DMp):
+                #t_obs = t0 + f_refr*v_DMp/DS.nu**2
+                t_obs = t0 + v_DMp/DS.nu**2
+                is_t = (np.rint((t_obs-DS.t[0])/dt)).astype(int)
+                is_t[is_t<0] = 0
+                is_t[is_t>=N_t] = N_t-1
+                DS_slice = DS.DS[is_t,is_nu]
+                #print(np.std(DS_slice))
+                
+                self.Hough[i_t0,i_DMp] = np.sum(DS_slice)
+        bar.finish()
+        
+    def get_peaks(self,**kwargs):
+        std_window = kwargs.get("std_window",11)
+        
+        N2 = std_window
+        N_std = int(2*N2)
+        Hough_std = np.empty((self.N_t-N_std,self.N_DMp),dtype=float)
+        t_std = self.t[N2:self.N_t-N2]
+        N_t_std = len(t_std)
+        bar = progressbar.ProgressBar(maxval=self.N_t-N_std, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+        bar.start()
+        for i_t0 in range(N2,self.N_t-N2):
+            bar.update(i_t0-N2)
+            Hough_std[i_t0-N2,:] = np.std(self.Hough[i_t0-N2:i_t0+N2,:],axis=0)
+        bar.finish()
+    
+        is_peak = np.argmax(Hough_std,axis=1)
+        DMp_peak = self.DMp[is_peak]
+        peak_values = self.Hough[np.arange(N_t_std),is_peak]
+        return DMp_peak,peak_values,Hough_std,t_std
+        
+class refracted_scintles_std:
+    type = "refracted_scintles_std"
+    def __init__(self,DS,**kwargs):
+        self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","refracted_scintles_std.npz")
+        if self.data_path==None:
+            self.compute(DS,kwargs)
+        else:
+            if not os.path.exists(self.data_path):
+                os.makedirs(self.data_path)
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
+                self.compute(DS,kwargs)
+                np.savez(file_data,t=self.t,DMp=self.DMp,std_measure=self.std_measure)
+            else:
+                if os.path.exists(file_data):
+                    lib_data = np.load(file_data)
+                    self.t = lib_data["t"]
+                    self.DMp = lib_data["DMp"]
+                    self.std_measure = lib_data["std_measure"]
+                else:
+                    raise KeyError
+        self.recalculate()
+        
+    def recalculate(self):
+        #provide some useful parameters
+        self.N_t,self.N_DMp = self.std_measure.shape
+        
+    def compute(self,DS,kwargs):
+        if not DS.type == "intensity":
+            raise TypeError
+        shift_max = kwargs.get("shift_max",1.*minute)
+        N_DMp = kwargs.get("N_DMp",11)
+        
+        self.t = np.copy(DS.t)
+        N_t = DS.N_t
+        N_nu = DS.N_nu
+        dt = DS.dt
+        DM_slope_max = shift_max/(1./DS.nu[0]**2-1./DS.nu[-1]**2)
+        self.DMp = np.linspace(-DM_slope_max,DM_slope_max,num=N_DMp,endpoint=True)
+        self.std_measure = np.empty((N_t,N_DMp),dtype=float)
+        is_nu = np.arange(N_nu)
+        
+        bar = progressbar.ProgressBar(maxval=N_t, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+        bar.start()
+        for i_t0,t0 in enumerate(self.t):
+            bar.update(i_t0)
+            for i_DMp,v_DMp in enumerate(self.DMp):
+                #t_obs = t0 + f_refr*v_DMp/DS.nu**2
+                t_obs = t0 + v_DMp/DS.nu**2
+                is_t = (np.rint((t_obs-DS.t[0])/dt)).astype(int)
+                mask = np.ones(len(is_nu),dtype=bool)
+                #is_t[is_t<0] = 0
+                #is_t[is_t>=N_t] = N_t-1
+                #DS_slice = DS.DS[is_t,is_nu]
+                mask[is_t<0] = False
+                mask[is_t>=N_t] = False
+                DS_slice = DS.DS[is_t[mask],is_nu[mask]]
+                #print(np.std(DS_slice))
+                
+                self.std_measure[i_t0,i_DMp] = np.std(DS_slice)
+        bar.finish()
