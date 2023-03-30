@@ -6,3 +6,6 @@ Some computationally demanding parts of code were written in C++ instead of Pyth
 > g++ -Wall -O2 -fopenmp -shared -Wl,-soname,lib_scinter -o lib_scinter.so -fPIC lib_scinter.cpp
 
 The compiled file lib_scinter.so is provided. If you are using an incompatible OS, you need to find a way to recompile lib_scinter.cpp.
+
+## Required Python packages
+- progressbar
