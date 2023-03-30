@@ -12,3 +12,5 @@ The compiled file lib_scinter.so is provided. If you are using an incompatible O
 - scipy
 - astropy
 - progressbar
+- matplotlib
+- skimage
