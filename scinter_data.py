@@ -2928,6 +2928,18 @@ class generic_Efield(Efield):
         self.amplitude = np.abs(EF)
         self.phase = np.angle(EF)
         self.recalculate()
+    
+class load_Efield(Efield):    
+    def __init__(self,data_path):
+        self.data_path = data_path
+        file_data = os.path.join(data_path,"EF.npz")
+        lib_data = np.load(file_data)
+        self.nu = lib_data["nu"]
+        self.t = lib_data["t"]
+        self.Efield = lib_data["Efield"]
+        self.amplitude = np.abs(self.Efield)
+        self.phase = np.angle(self.Efield)
+        self.recalculate()
         
 class Wavefield_NuT:
     type = "wavefield"
@@ -2991,6 +3003,59 @@ class Wavefield_NuT:
         lib.ENuT(EF.N_t,EF.N_nu,self.N_fD,tt,EF.nu,self.fD,np.real(E).flatten(),np.imag(E).flatten(),hWF_real,hWF_im)
         hWF = hWF_real.reshape((self.N_fD,EF.N_nu))+1.j*hWF_im.reshape((self.N_fD,EF.N_nu))
         self.WF = np.fft.fftshift(np.fft.fft(hWF,axis=1),axes=1)
+        
+        self.amplitude = np.abs(self.WF)
+        self.phase = np.angle(self.WF)
+        
+class Wavefield_FFT(Wavefield_NuT):
+    def __init__(self,DS,EF,**kwargs):
+        self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","Wavefield_FFT.npz")
+        if self.data_path==None:
+            self.compute(DS,EF,kwargs)
+        else:
+            if not os.path.exists(self.data_path):
+                os.makedirs(self.data_path)
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS==None or EF==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
+                self.compute(DS,EF,kwargs)
+                np.savez(file_data,fD=self.fD,tau=self.tau,WF=self.WF,nu0=self.nu0,amplitude=self.amplitude,phase=self.phase)
+            else:
+                if os.path.exists(file_data):
+                    lib_data = np.load(file_data)
+                    self.fD = lib_data["fD"]
+                    self.tau = lib_data["tau"]
+                    self.WF = lib_data["WF"]
+                    self.nu0 = lib_data["nu0"]
+                    self.amplitude = lib_data["amplitude"]
+                    self.phase = lib_data["phase"]
+                else:
+                    raise KeyError
+        self.recalculate()
+        
+    def compute(self,DS,EF,kwargs):
+        #print("Computing Wavefield_NuT ...")
+        if not DS.type == "intensity":
+            raise TypeError
+        if not EF.type == "electric field":
+            raise TypeError
+        self.fD = np.fft.fftshift(np.fft.fftfreq(DS.N_t,DS.dt))
+        self.tau = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,DS.dnu))
+        self.nu0 = kwargs.get("nu0",DS.nu0)
+        
+        #- prepare data
+        data = np.copy(DS.DS)
+        data[data<0.] = 0.
+        E = np.sqrt(data)*np.exp(1.j*EF.phase)
+        
+        self.WF = np.fft.fftshift(np.fft.fft2(E,axes=(0,1)),axes=(0,1))
         
         self.amplitude = np.abs(self.WF)
         self.phase = np.angle(self.WF)

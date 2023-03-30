@@ -88,6 +88,27 @@ class measurement:
         with open(self.logfile,'w') as writefile:
             self.yaml.dump(self.results,writefile)
             
+    def log_E(self,EF):
+        fname = os.path.join(self.data_path,"EF.npz")
+        np.savez(fname,t=EF.t,nu=EF.nu,Efield=EF.Efield)
+        print("New electric field saved as "+fname)
+            
+    def log_p(self,p):
+        fname = os.path.join(self.data_path,"p.npz")
+        np.savez(fname,p=p)
+        print("New projected telescope position saved as "+fname)
+            
+    def log_VIS(self,DS):
+        fname = os.path.join(self.data_path,"DS.npz")
+        np.savez(fname,t=DS.t,mjd=DS.mjd,nu=DS.nu,DS=DS.DS,phase=DS.phase)
+        print("New VIS saved as "+fname)
+        self.results.update({"mjd0":float(DS.mjd0)})
+        self.results.update({"nu0":float(DS.nu0)})
+        self.results.update({"timespan":float(DS.timespan)})
+        self.results.update({"bandwidth":float(DS.bandwidth)})
+        with open(self.logfile,'w') as writefile:
+            self.yaml.dump(self.results,writefile)
+            
     def enter_result(self,key,value,dtype=float):
         self.results.update({key:dtype(value)})
         with open(self.logfile,'w') as writefile:

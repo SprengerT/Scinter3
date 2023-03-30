@@ -848,6 +848,10 @@ class OnTel_1DScreen:
         #DS = np.abs(E)**2
         return E,p_vec
         
+    def compute_SS_theo(self,t,nu,mjds,psrname,telcoords):
+        vtel_vec,p_vec = self.get_observer(mjds,psrname,telcoords)
+        
+        
     def get_eta(self,mjd,psrname,telcoords,nu0):
         
         vtel_vec,p_vec = self.get_observer(mjd,psrname,telcoords)
