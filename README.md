@@ -8,4 +8,7 @@ Some computationally demanding parts of code were written in C++ instead of Pyth
 The compiled file lib_scinter.so is provided. If you are using an incompatible OS, you need to find a way to recompile lib_scinter.cpp.
 
 ## Required Python packages
+- numpy
+- scipy
+- astropy
 - progressbar
