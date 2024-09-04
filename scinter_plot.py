@@ -1,11 +1,13 @@
 import numpy as np
 from numpy import newaxis as na
 import matplotlib as mpl
-import matplotlib.style as mplstyle
-mplstyle.use('fast')
+#import matplotlib.style as mplstyle
+#mplstyle.use('fast')
 import matplotlib.pyplot as plt
 import skimage
 from skimage.measure import block_reduce
+from PIL import Image
+import os
 
 #constants
 au = 149597870700. #m
@@ -122,9 +124,10 @@ def pulse_profile(t,nu,pulse,ax,**kwargs):
     t_max = kwargs.get("t_max",np.max(t)/xscale)
     nu_min = kwargs.get("nu_min",np.min(nu)/yscale)
     nu_max = kwargs.get("nu_max",np.max(nu)/yscale)
+    log10 = kwargs.get("log10",False)
     
     #draw the plot
-    im = colormesh(t/xscale,nu/yscale,pulse,ax,x_sampling=t_sampling,y_sampling=nu_sampling,cmap=cmap,vmin=vmin,vmax=vmax)
+    im = colormesh(t/xscale,nu/yscale,pulse,ax,x_sampling=t_sampling,y_sampling=nu_sampling,cmap=cmap,vmin=vmin,vmax=vmax,log10=log10)
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -168,6 +171,33 @@ def secondary_spectrum(fD,tau,SS,ax,**kwargs):
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_xlim([fD_min,fD_max])
+    ax.set_ylim([tau_min,tau_max])
+    
+    return im
+
+def ttau_spectrum(t,tau,hSS,ax,**kwargs):
+    #parameters
+    t_sampling = kwargs.get("t_sampling",1)
+    tau_sampling = kwargs.get("tau_sampling",1)
+    cmap = kwargs.get("cmap",'viridis')
+    vmin = kwargs.get("vmin",None)
+    vmax = kwargs.get("vmax",None)
+    title = kwargs.get("title",r"FFT over frequency")
+    xlabel = kwargs.get("xlabel",r"$t$ [min]")
+    ylabel = kwargs.get("ylabel",r"$\tau$ [$\mu$s]")
+    xscale = kwargs.get("xscale",minute)
+    yscale = kwargs.get("yscale",musec)
+    t_min = kwargs.get("t_min",np.min(t)/xscale)
+    t_max = kwargs.get("t_max",np.max(t)/xscale)
+    tau_min = kwargs.get("tau_min",np.min(tau)/yscale)
+    tau_max = kwargs.get("tau_max",np.max(tau)/yscale)
+    
+    #draw the plot
+    im = colormesh(t/xscale,tau/yscale,hSS,ax,x_sampling=t_sampling,y_sampling=tau_sampling,cmap=cmap,vmin=vmin,vmax=vmax,log10=True)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_xlim([t_min,t_max])
     ax.set_ylim([tau_min,tau_max])
     
     return im
@@ -284,7 +314,8 @@ def thfD_diagram(th,fD,thfD,ax,**kwargs):
     
 def thth_diagram(th,thth,ax,**kwargs):
     #parameters
-    th_sampling = kwargs.get("th_sampling",1)
+    th1_sampling = kwargs.get("th_sampling",1)
+    th2_sampling = kwargs.get("th2_sampling",th1_sampling)
     cmap = kwargs.get("cmap",'viridis')
     vmin = kwargs.get("vmin",None)
     vmax = kwargs.get("vmax",None)
@@ -297,12 +328,39 @@ def thth_diagram(th,thth,ax,**kwargs):
     th_max = kwargs.get("th_max",np.max(th)/xscale)
     
     #draw the plot
-    im = colormesh(th/xscale,th/yscale,thth,ax,x_sampling=th_sampling,y_sampling=th_sampling,cmap=cmap,vmin=vmin,vmax=vmax,log10=True)
+    im = colormesh(th/xscale,th/yscale,thth,ax,x_sampling=th1_sampling,y_sampling=th2_sampling,cmap=cmap,vmin=vmin,vmax=vmax,log10=True)
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_xlim([th_min,th_max])
     ax.set_ylim([th_min,th_max])
+    
+    return im
+
+def thth_arc(thx,thy,thth,ax,**kwargs):
+    #parameters
+    thx_sampling = kwargs.get("thx_sampling",1)
+    thy_sampling = kwargs.get("thy_sampling",1)
+    cmap = kwargs.get("cmap",'viridis')
+    vmin = kwargs.get("vmin",None)
+    vmax = kwargs.get("vmax",None)
+    title = kwargs.get("title",r"$\theta$-$\theta$ Diagram")
+    ylabel = kwargs.get("ylabel",r"$\theta_x$ [mas]")
+    xlabel = kwargs.get("xlabel",r"$\theta_y$ [mas]")
+    xscale = kwargs.get("xscale",mas)
+    yscale = kwargs.get("yscale",mas)
+    thx_min = kwargs.get("thx_min",np.min(thx)/xscale)
+    thx_max = kwargs.get("thx_max",np.max(thx)/xscale)
+    thy_min = kwargs.get("thy_min",np.min(thy)/xscale)
+    thy_max = kwargs.get("thy_max",np.max(thy)/xscale)
+    
+    #draw the plot
+    im = colormesh(thx/xscale,thy/yscale,thth,ax,x_sampling=thx_sampling,y_sampling=thy_sampling,cmap=cmap,vmin=vmin,vmax=vmax,log10=True)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_xlim([thx_min,thx_max])
+    ax.set_ylim([thy_min,thy_max])
     
     return im
     
@@ -361,6 +419,34 @@ def theta_freq(th,nu,thnu,ax,**kwargs):
     
     return im
     
+def freq_theta(nu,th,thnu,ax,**kwargs):
+    #parameters
+    th_sampling = kwargs.get("th_sampling",1)
+    nu_sampling = kwargs.get("nu_sampling",1)
+    cmap = kwargs.get("cmap",'viridis')
+    vmin = kwargs.get("vmin",None)
+    vmax = kwargs.get("vmax",None)
+    title = kwargs.get("title",r"Eigenvector")
+    xlabel = kwargs.get("xlabel",r"$\nu$ [MHz]")
+    ylabel = kwargs.get("ylabel",r"$\theta$ [mas]")
+    xscale = kwargs.get("xscale",MHz)
+    yscale = kwargs.get("yscale",mas)
+    th_min = kwargs.get("th_min",np.min(th)/xscale)
+    th_max = kwargs.get("th_max",np.max(th)/xscale)
+    nu_min = kwargs.get("nu_min",np.min(nu)/yscale)
+    nu_max = kwargs.get("nu_max",np.max(nu)/yscale)
+    log10 = kwargs.get("log10",False)
+    
+    #draw the plot
+    im = colormesh(nu/xscale,th/yscale,thnu,ax,y_sampling=th_sampling,x_sampling=nu_sampling,cmap=cmap,vmin=vmin,vmax=vmax,log10=log10)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_ylim([th_min,th_max])
+    ax.set_xlim([nu_min,nu_max])
+    
+    return im
+    
 def time_theta(t,th,tth,ax,**kwargs):
     #parameters
     t_sampling = kwargs.get("t_sampling",1)
@@ -388,6 +474,34 @@ def time_theta(t,th,tth,ax,**kwargs):
     ax.set_ylim([th_min,th_max])
     
     return im
+    
+def theta_time(th,t,tht,ax,**kwargs):
+    #parameters
+    t_sampling = kwargs.get("t_sampling",1)
+    th_sampling = kwargs.get("th_sampling",1)
+    cmap = kwargs.get("cmap",'viridis')
+    vmin = kwargs.get("vmin",None)
+    vmax = kwargs.get("vmax",None)
+    title = kwargs.get("title",r"Eigenvector")
+    xlabel = kwargs.get("xlabel",r"$\theta$ [mas]")
+    ylabel = kwargs.get("ylabel",r"$t$ [min]")
+    xscale = kwargs.get("xscale",minute)
+    yscale = kwargs.get("yscale",mas)
+    t_min = kwargs.get("t_min",np.min(t)/yscale)
+    t_max = kwargs.get("t_max",np.max(t)/yscale)
+    th_min = kwargs.get("th_min",np.min(th)/xscale)
+    th_max = kwargs.get("th_max",np.max(th)/xscale)
+    log10 = kwargs.get("log10",False)
+    
+    #draw the plot
+    im = colormesh(th/xscale,t/yscale,tht,ax,x_sampling=th_sampling,y_sampling=t_sampling,cmap=cmap,vmin=vmin,vmax=vmax,log10=log10)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_xlim([th_min,th_max])
+    ax.set_ylim([t_min,t_max])
+    
+    return im
 
 def scintscales(t_shift,nu_shift,ACF,ccorr_t,t_model_ACF,ccorr_nu,nu_model_ACF,figure,**kwargs):
     #parameters
@@ -395,7 +509,7 @@ def scintscales(t_shift,nu_shift,ACF,ccorr_t,t_model_ACF,ccorr_nu,nu_model_ACF,f
     nu_sampling = kwargs.get("nu_sampling",1)
     cmap = kwargs.get("cmap",'Greys')
     vmin = kwargs.get("vmin",np.mean(ACF) - 3*np.std(ACF))
-    vmax = kwargs.get("vmax",np.mean(ACF) + 10*np.std(ACF))
+    vmax = kwargs.get("vmax",np.max(ACF))
     title = kwargs.get("title",r"ACF")
     xlabel = kwargs.get("xlabel",r"$\Delta t$ [min]")
     ylabel = kwargs.get("ylabel",r"$\Delta\nu$ [MHz]")
@@ -416,6 +530,7 @@ def scintscales(t_shift,nu_shift,ACF,ccorr_t,t_model_ACF,ccorr_nu,nu_model_ACF,f
     ax2.plot(nu_model_ACF, nu_shift/yscale, color=model_color, linestyle='--')
     ax3.plot( t_shift/xscale, ccorr_t, color='k')
     ax3.plot( t_shift/xscale, t_model_ACF, color=model_color, linestyle='--')
+    
     
     figure.suptitle(title)
     ax3.xaxis.set_label_position("top")
@@ -545,3 +660,40 @@ def diagnostic(t,nu,DS,fD,tau,SS,zeta,zeta_err,zeta_scales,t_shift,nu_shift,ACF,
     ax4.set_ylim([nu_min,nu_max])
     ax4.yaxis.tick_right()
     ax4.yaxis.set_label_position("right")
+
+def refraction_spectrum(fD,fnum2,SS,ax,**kwargs):
+    #parameters
+    fD_sampling = kwargs.get("fD_sampling",1)
+    fnum2_sampling = kwargs.get("fnum2_sampling",1)
+    cmap = kwargs.get("cmap",'viridis')
+    vmin = kwargs.get("vmin",None)
+    vmax = kwargs.get("vmax",None)
+    title = kwargs.get("title",r"Refraction Spectrum")
+    xlabel = kwargs.get("xlabel",r"$f_D$ [mHz]")
+    ylabel = kwargs.get("ylabel",r"$f_{1/\nu^2}$ [MHz$^2$]")
+    xscale = kwargs.get("xscale",mHz)
+    yscale = kwargs.get("yscale",MHz**2)
+    fD_min = kwargs.get("fD_min",np.min(fD)/xscale)
+    fD_max = kwargs.get("fD_max",np.max(fD)/xscale)
+    fnum2_min = kwargs.get("fnum2_min",np.min(fnum2)/yscale)
+    fnum2_max = kwargs.get("fnum2_max",np.max(fnum2)/yscale)
+        
+    #draw the plot
+    im = colormesh(fD/xscale,fnum2/yscale,SS,ax,x_sampling=fD_sampling,y_sampling=fnum2_sampling,cmap=cmap,vmin=vmin,vmax=vmax,log10=True)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_xlim([fD_min,fD_max])
+    ax.set_ylim([fnum2_min,fnum2_max])
+    
+    return im
+
+def convert_png_to_gif(input_folder,output_file,duration,loop):
+    images =[]
+    png_files = [f for f in os.listdir(input_folder) if f.lower().endswith(".png")]
+    png_files.sort()
+    for png_file in png_files:
+        png_path = os.path.join(input_folder, png_file)
+        img = Image.open(png_path)
+        images.append(img)
+    images[0].save(os.path.join(input_folder,output_file), save_all=True, append_images=images[1:],duration=duration,loop=loop)

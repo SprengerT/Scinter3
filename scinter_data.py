@@ -53,6 +53,48 @@ lib.NuT.argtypes = [
     ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
 ] 
 
+#load C++ library for computation of a secondary spectrum from stable gradients
+lib.SSgrad.argtypes = [
+    ctypes.c_int,   # N_t = N_fD
+    ctypes.c_int,   # N_nu = N_tau
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tt [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fD [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tau [N_nu]
+    ctypes.c_double,   # nu0
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # SS_real [N_t*N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # SS_im [N_t*N_nu]
+] 
+
+#load C++ library for fast NuT transform including correction of refraction
+lib.NuT_derefracted.argtypes = [
+    ctypes.c_int,   # N_t
+    ctypes.c_int,   # N_nu
+    ctypes.c_int,   # N_fD
+    ctypes.c_double,   # nu0
+    ctypes.c_double,   # f_refr
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tt [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fD [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_real [N_t*N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
+]
+
+#load C++ library for fast Fourier detection of 1/nu^2 refraction
+lib.SS_refr.argtypes = [
+    ctypes.c_int,   # N_t
+    ctypes.c_int,   # N_nu
+    ctypes.c_int,   # N_fnum2
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # num2 [N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fnum2 [N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_real [N_t*N_nu]
+    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
+] 
+
 lib.ENuT.argtypes = [
     ctypes.c_int,   # N_t
     ctypes.c_int,   # N_nu
@@ -103,8 +145,9 @@ class intensity:
     def recalculate(self):
         #provide some useful parameters
         self.N_t,self.N_nu = self.DS.shape
-        self.dt = self.t[1]-self.t[0]
-        self.dnu = self.nu[1]-self.nu[0]
+        self.dt = np.mean(np.diff(self.t)) #self.t[1]-self.t[0]
+        self.dnu = np.mean(np.diff(self.nu)) #self.nu[1]-self.nu[0]
+        self.dmjd = np.mean(np.diff(self.mjd))
         self.t_min = self.t[0]
         self.t_max = self.t[-1]
         self.nu_min = self.nu[0]
@@ -526,6 +569,115 @@ class intensity:
             eta_err_var[tc] = np.std(eta1400_evo)/np.sqrt(len(eta1400_evo))
                 
         return t_var,eta_var,eta_err_var,nu_var,etas_arr,errs_arr
+    
+class dynspec_masked(intensity):
+    def __init__(self,data_path):
+        """
+        override this function to load custom data
+        self.DS: dynamic spectrum time*frequency
+        self.nu: frequency
+        self.t: time in seconds since start of observation
+        self.mjd: time in MJD
+        """
+        # - load data
+        self.data_path = data_path
+        file_data = os.path.join(data_path,"DS.npz")
+        lib_data = np.load(file_data)
+        self.nu = lib_data["nu"]
+        self.t = lib_data["t"]
+        self.mjd = lib_data["mjd"]
+        self.DS = lib_data["DS"]
+        self.mask = lib_data["mask"]
+        # - provide some useful parameters
+        self.recalculate()
+        
+    def recalculate(self):
+        #provide some useful parameters
+        self.N_t,self.N_nu = self.DS.shape
+        self.dt = np.mean(np.diff(self.t)) #self.t[1]-self.t[0]
+        self.dnu = np.mean(np.diff(self.nu)) #self.nu[1]-self.nu[0]
+        self.t_min = self.t[0]
+        self.t_max = self.t[-1]
+        self.nu_min = self.nu[0]
+        self.nu_max = self.nu[-1]
+        self.timespan = self.t_max-self.t_min
+        self.bandwidth = self.nu_max-self.nu_min
+        self.t0 = np.mean(self.t)
+        self.nu0 = np.mean(self.nu)
+        self.mjd_min = self.mjd[0]
+        self.mjd_max = self.mjd[-1]
+        self.mjd0 = np.mean(self.mjd)
+        
+    def crop(self,t_min=None,t_max=None,nu_min=None,nu_max=None,N_t=None,N_nu=None): #missing option for mask, profile and bpass
+            # - create subset of data
+        if t_min==None:
+            i0_t = 0
+        else:
+            i0_t = np.argmin(np.abs(self.t-t_min))
+        if t_max==None:
+            i1_t = self.N_t
+            if not N_t==None:
+                if N_t <= i1_t:
+                    i1_t = N_t
+                else:
+                    print("/!\ N_t too large! Using available data instead.")
+        else:
+            i1_t = np.argmin(np.abs(self.t-t_max))
+            if not N_t==None and N_t!=i1_t:
+                print("/!\ N_t incompatible with t_max! Using only t_max instead.")
+        if nu_min==None:
+            i0_nu = 0
+        else:
+            i0_nu = np.argmin(np.abs(self.nu-nu_min))
+        if nu_max==None:
+            i1_nu = self.N_nu
+            if not N_nu==None:
+                if N_nu <= i1_nu:
+                    i1_nu = N_nu
+                else:
+                    print("/!\ N_nu too large! Using available data instead.")
+        else:
+            i1_nu = np.argmin(np.abs(self.nu-nu_max))
+            if not N_nu==None and N_nu!=i1_nu:
+                print("/!\ N_nu incompatible with nu_max! Using only nu_max instead.")
+        if i0_t!=0 or i1_t!=self.N_t or i0_nu!=0 or i1_nu!=self.N_nu:
+            self.mjd = self.mjd[i0_t:i1_t]
+            self.t = self.t[i0_t:i1_t]
+            self.nu = self.nu[i0_nu:i1_nu]
+            self.DS = self.DS[i0_t:i1_t,i0_nu:i1_nu]
+            self.mask = self.mask[i0_t:i1_t,i0_nu:i1_nu]
+            self.recalculate()
+        else:
+            raise ValueError
+            
+    def slice(self,i0_t=0,i1_t=-1,i0_nu=0,i1_nu=-1):
+        self.mjd = self.mjd[i0_t:i1_t]
+        self.t = self.t[i0_t:i1_t]
+        self.nu = self.nu[i0_nu:i1_nu]
+        self.DS = self.DS[i0_t:i1_t,i0_nu:i1_nu]
+        self.mask = self.mask[i0_t:i1_t,i0_nu:i1_nu]
+        self.recalculate()
+            
+    def downsample(self,**kwargs):
+        t_sampling = kwargs.get("t_sampling",1)
+        nu_sampling = kwargs.get("nu_sampling",1)
+        masked_DS = np.copy(self.DS)
+        masked_DS[self.mask] = np.nan
+        filler = block_reduce(self.DS, block_size=(t_sampling,nu_sampling), func=np.mean)
+        self.DS = block_reduce(masked_DS, block_size=(t_sampling,nu_sampling), func=np.nanmean)
+        self.mask = block_reduce(self.mask, block_size=(t_sampling,nu_sampling), func=np.min)
+        self.DS[self.mask] = filler[self.mask]
+        coordinates = np.array([self.t,self.t])
+        coordinates = block_reduce(coordinates, block_size=(1,t_sampling), func=np.mean, cval=self.t[-1])
+        self.t = coordinates[0,:]
+        coordinates = np.array([self.mjd,self.mjd])
+        coordinates = block_reduce(coordinates, block_size=(1,t_sampling), func=np.mean, cval=self.mjd[-1])
+        self.mjd = coordinates[0,:]
+        coordinates = np.array([self.nu,self.nu])
+        coordinates = block_reduce(coordinates, block_size=(1,nu_sampling), func=np.mean, cval=self.nu[-1])
+        self.nu = coordinates[0,:]
+        self.recalculate()
+    
         
 class visibility:
     type = "visibility"
@@ -805,6 +957,18 @@ class generic_intensity(intensity):
         self.mjd = mjd0 + (self.t-np.mean(self.t))/day
         self.recalculate()
         
+class generic_masked_intensity(dynspec_masked):
+    def __init__(self,t,nu,DS,mask,mjd):
+        self.t = t
+        self.nu = nu
+        self.DS = DS
+        self.mask = mask
+        self.mjd = mjd
+        masked_DS = np.copy(self.DS)
+        masked_DS[self.mask] = np.nan
+        self.DS = self.DS/np.nanstd(masked_DS)
+        self.recalculate()
+        
 class generic_visibility(visibility):
     def __init__(self,t,nu,DS,phase,mjd0):
         self.t = t
@@ -925,19 +1089,137 @@ class SecSpec_NuT(secondary_spectrum):
     def compute(self,DS,kwargs):
         if not DS.type == "intensity":
             raise TypeError
+        subtract_mean = kwargs.get("subtract_mean",True)
+        self.mjd0 = kwargs.get("mjd0",DS.mjd0)
+        self.nu0 = kwargs.get("nu0",DS.nu0)
+        self.f_refr = kwargs.get("f_refr",0.)
+        self.fD = np.fft.fftshift(np.fft.fftfreq(DS.N_t,DS.dt))
+        self.tau = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,DS.dnu))
+        #- prepare data
+        data = DS.DS
+        if subtract_mean:
+            data = data - np.mean(DS.DS)
+        #tt = (DS.t-DS.t0)/self.nu0
+        hss_real = np.zeros((DS.N_t*DS.N_nu),dtype='float64')
+        hss_im = np.zeros((DS.N_t*DS.N_nu),dtype='float64')
+        if self.f_refr==0.:
+            tt = (DS.t-DS.t0+(DS.mjd0-self.mjd0)*day)/self.nu0
+            lib.NuT(DS.N_t,DS.N_nu,DS.N_t,tt.astype('float64'),DS.nu.astype('float64'),self.fD.astype('float64'),data.astype('float64').flatten(),hss_real,hss_im)
+        else:
+            tt = DS.t-DS.t0+(DS.mjd0-self.mjd0)*day-self.f_refr/self.nu0**2
+            lib.NuT_derefracted(DS.N_t,DS.N_nu,DS.N_t,self.nu0,self.f_refr,tt.astype('float64'),DS.nu.astype('float64'),self.fD.astype('float64'),data.astype('float64').flatten(),hss_real,hss_im)
+        hss = hss_real.reshape((DS.N_t,DS.N_nu))+1.j*hss_im.reshape((DS.N_t,DS.N_nu))
+        self.SS = np.abs(np.fft.fftshift(np.fft.fft(hss,axis=1),axes=1))**2
+        
+class SecSpec_grad(secondary_spectrum):
+    def __init__(self,DS,**kwargs):
+        self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","SecSpec_grad.npz")
+        if self.data_path==None:
+           self.compute(DS,kwargs)
+        else:
+            if not os.path.exists(self.data_path):
+                os.makedirs(self.data_path)
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
+                self.compute(DS,kwargs)
+                np.savez(file_data,fD=self.fD,tau=self.tau,SS=self.SS,nu0=self.nu0,mjd0=self.mjd0)
+            else:
+                if os.path.exists(file_data):
+                    lib_data = np.load(file_data)
+                    self.fD = lib_data["fD"]
+                    self.tau = lib_data["tau"]
+                    self.SS = lib_data["SS"]
+                    self.nu0 = lib_data.get("nu0",None)
+                    self.mjd0 = lib_data.get("mjd0",None)
+                else:
+                    raise KeyError
+        self.recalculate()
+    
+    def compute(self,DS,kwargs):
+        if not DS.type == "intensity":
+            raise TypeError
+        subtract_mean = kwargs.get("subtract_mean",True)
         self.mjd0 = kwargs.get("mjd0",DS.mjd0)
         self.nu0 = kwargs.get("nu0",DS.nu0)
         self.fD = np.fft.fftshift(np.fft.fftfreq(DS.N_t,DS.dt))
         self.tau = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,DS.dnu))
         #- prepare data
-        data = DS.DS - np.mean(DS.DS)
+        data = DS.DS
+        if subtract_mean:
+            data = data - np.mean(DS.DS)
         #tt = (DS.t-DS.t0)/self.nu0
-        tt = (DS.t-DS.t0+(DS.mjd0-self.mjd0)*day)/self.nu0
+        ss_real = np.zeros((DS.N_t*DS.N_nu),dtype='float64')
+        ss_im = np.zeros((DS.N_t*DS.N_nu),dtype='float64')
+        tt = (DS.t-DS.t0+(DS.mjd0-self.mjd0)*day)
+        #nu1 = -2.*np.pi*self.nu0**2/DS.nu
+        #nu3 = -2.*np.pi*self.nu0**4/DS.nu**3
+        lib.SSgrad(DS.N_t,DS.N_nu,tt.astype('float64'),DS.nu.astype('float64'),self.fD.astype('float64'),self.tau.astype('float64'),self.nu0,data.astype('float64').flatten(),ss_real,ss_im)
+        self.SS = np.abs(ss_real.reshape((DS.N_t,DS.N_nu))+1.j*ss_im.reshape((DS.N_t,DS.N_nu)))**2
+        
+class SecSpec_refr():
+    def recalculate(self):
+        #provide some useful parameters
+        self.N_fD,self.N_fnum2 = self.SS.shape
+        self.dfD = self.fD[1] - self.fD[0]
+        self.dfnum2 = self.fnum2[1] - self.fnum2[0]
+        self.fD_max = np.max(self.fD)
+        self.fnum2_max = np.max(self.fnum2)
+        
+    def __init__(self,DS,**kwargs):
+        self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","SecSpec_refr.npz")
+        if self.data_path==None:
+           self.compute(DS,kwargs)
+        else:
+            if not os.path.exists(self.data_path):
+                os.makedirs(self.data_path)
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
+                self.compute(DS,kwargs)
+                np.savez(file_data,fD=self.fD,fnum2=self.fnum2,SS=self.SS)
+            else:
+                if os.path.exists(file_data):
+                    lib_data = np.load(file_data)
+                    self.fD = lib_data["fD"]
+                    self.fnum2 = lib_data["fnum2"]
+                    self.SS = lib_data["SS"]
+                else:
+                    raise KeyError
+        self.recalculate()
+    
+    def compute(self,DS,kwargs):
+        if not DS.type == "intensity":
+            raise TypeError
+        subtract_mean = kwargs.get("subtract_mean",True)
+        self.fD = np.fft.fftshift(np.fft.fftfreq(DS.N_t,DS.dt))
+        num2 = 1./DS.nu**2
+        dnum2 = np.diff(num2).mean()
+        self.fnum2 = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,dnum2))
+        #- prepare data
+        data = DS.DS
+        if subtract_mean:
+            data = data - np.mean(DS.DS)
+        #tt = (DS.t-DS.t0)/self.nu0
         hss_real = np.zeros((DS.N_t*DS.N_nu),dtype='float64')
         hss_im = np.zeros((DS.N_t*DS.N_nu),dtype='float64')
-        lib.NuT(DS.N_t,DS.N_nu,DS.N_t,tt.astype('float64'),DS.nu.astype('float64'),self.fD.astype('float64'),data.astype('float64').flatten(),hss_real,hss_im)
+        lib.SS_refr(DS.N_t,DS.N_nu,DS.N_nu,DS.t.astype('float64'),num2.astype('float64'),self.fnum2.astype('float64'),data.astype('float64').flatten(),hss_real,hss_im)
         hss = hss_real.reshape((DS.N_t,DS.N_nu))+1.j*hss_im.reshape((DS.N_t,DS.N_nu))
-        self.SS = np.abs(np.fft.fftshift(np.fft.fft(hss,axis=1),axes=1))**2
+        self.SS = np.abs(np.fft.fftshift(np.fft.fft(hss,axis=0),axes=0))**2
         
 class SecSpec_Lambda(secondary_spectrum):
     def __init__(self,DS,**kwargs):
@@ -1645,7 +1927,7 @@ class thth_arc:
         if self.eta==0.:
             fD_to_stau = 1./(2.*nu0*self.zeta)
         elif self.zeta==0.:
-            fD_to_stau = np.sqrt(eta)
+            fD_to_stau = np.sqrt(self.eta)
         else:
             print("You cannot specify both eta and zeta!")
             raise KeyError
@@ -2986,7 +3268,7 @@ class Wavefield_NuT:
         if not DS.type == "intensity":
             raise TypeError
         if not EF.type == "electric field":
-            raise TypeError
+            raise 
         self.nu0 = kwargs.get("nu0",DS.nu0)
         self.fD = np.fft.fftshift(np.fft.fftfreq(DS.N_t,DS.dt))
         self.tau = np.fft.fftshift(np.fft.fftfreq(DS.N_nu,DS.dnu))
@@ -3496,8 +3778,8 @@ class ACF_DS:
         else:
             self.ACF = np.fft.fftshift(np.fft.ifft2( np.fft.fft2(DS.DS) * np.fft.fft2(DS.DS).conj() ))
             self.ACF = np.real(self.ACF)
-            self.t_shift = np.linspace(-DS.timespan/2., DS.timespan/2., len(DS.t), endpoint=False)
-            self.nu_shift = np.linspace(-DS.bandwidth/2., DS.bandwidth/2., len(DS.nu), endpoint=False)
+            self.t_shift = np.linspace(-DS.timespan/2., DS.timespan/2., DS.N_t, endpoint=DS.N_t%2)
+            self.nu_shift = np.linspace(-DS.bandwidth/2., DS.bandwidth/2., DS.N_nu, endpoint=DS.N_nu%2)
             
     def fit_tscale(self,**kwargs):
         # Take slice through center of cross-correlation along time axis
@@ -3519,14 +3801,16 @@ class ACF_DS:
         i_sigma = np.min(is_sigma)
         p0 = [i_sigma*dt, 1., 0]
         popt, pcov = curve_fit(Gaussian, self.t_shift, ccorr_t, p0=p0)
-        tscint = np.sqrt(2) * abs(popt[0])
-        tscinterr = np.sqrt(2) * np.sqrt(pcov[0,0])
+        #tscint = np.sqrt(2) * abs(popt[0])
+        #tscinterr = np.sqrt(2) * np.sqrt(pcov[0,0])
+        tscint = abs(popt[0])
+        tscinterr = np.sqrt(pcov[0,0])
         t_model_ACF = Gaussian(self.t_shift, popt[0], popt[1], popt[2])
         
         return tscint,tscinterr,ccorr_t,t_model_ACF
         
     def fit_nuscale(self,**kwargs):
-        # Take slice through center of cross-correlation along time axis
+        # Take slice through center of cross-correlation along freq axis
         # Ignoring zero component with noise-noise correlation
         ACF_shifted = np.fft.ifftshift(self.ACF)
         ccorr_nu = ACF_shifted[1] + ACF_shifted[-1]
@@ -3536,18 +3820,25 @@ class ACF_DS:
         ccorr_nu = np.fft.fftshift(ccorr_nu)
         
         def Gaussian(x, sigma, A, C):
-            return A*np.exp( -x**2 / (2*sigma**2) ) + C
+            return A*np.exp( -x**2 / (2*sigma**2) *np.log(2) ) + C
+        
+        def Lorentzian(x, sigma, A, C):
+            return A/( 1 + x**2 / (2*sigma**2) ) + C
             
         # Fit the slices in frequency and time with a Gaussian
         # p0 values are just a starting guess
+        dnu_fit_max = kwargs.get("dnu_fit_max",np.max(np.abs(self.nu_shift)))
         dnu = self.nu_shift[1] - self.nu_shift[0]
         is_sigma = np.argwhere(ccorr_nu_shift<np.exp(-1./2.))
         i_sigma = np.min(is_sigma)
-        p0 = [i_sigma*dnu, 1., 0]
-        popt, pcov = curve_fit(Gaussian, self.nu_shift, ccorr_nu, p0=p0)
-        nuscint = np.sqrt(2*np.log(2)) * abs(popt[0])
-        nuscinterr = np.sqrt(2*np.log(2)) * np.sqrt(pcov[0,0])
-        nu_model_ACF = Gaussian(self.nu_shift, popt[0], popt[1], popt[2])
+        nuiss_0 = kwargs.get("muiss_0",i_sigma*dnu)
+        p0 = [nuiss_0, 1., 0]
+        popt, pcov = curve_fit(Lorentzian, self.nu_shift[np.abs(self.nu_shift)<=dnu_fit_max], ccorr_nu[np.abs(self.nu_shift)<=dnu_fit_max], p0=p0)
+        #nuscint = np.sqrt(2*np.log(2)) * abs(popt[0])
+        #nuscinterr = np.sqrt(2*np.log(2)) * np.sqrt(pcov[0,0])
+        nuscint = abs(popt[0])
+        nuscinterr = np.sqrt(pcov[0,0])
+        nu_model_ACF = Lorentzian(self.nu_shift, popt[0], popt[1], popt[2])
         
         return nuscint,nuscinterr,ccorr_nu,nu_model_ACF
         
