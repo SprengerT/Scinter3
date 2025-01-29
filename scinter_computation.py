@@ -1503,7 +1503,7 @@ class Two1DScreens_obsUnits(Two1DScreens):
         self.ph_y = np.append(self.ph_y,ph)
         
 class Evolution_Two1DScreens:
-    def  __init__(self,mjds,psrname,telcoords=""):
+    def  __init__(self,mjds,psrname,telcoords="",include_earth_rotation_in_veff=False):
         #load pulsar
         if type(psrname) == str:
             pulsar = SkyCoord.from_name(psrname)
@@ -1540,13 +1540,14 @@ class Evolution_Two1DScreens:
                 pz = pos_xyz.z.to(u.m).value
                 p_ra[i] = - px * np.sin(self.rarad) + py * np.cos(self.rarad)
                 p_dec[i] = - px * np.sin(self.decrad) * np.cos(self.rarad) - py * np.sin(self.decrad) * np.sin(self.rarad) + pz * np.cos(self.decrad)
-                #vx = vel_xyz.x.to(u.m/u.s).value
-                #vy = vel_xyz.y.to(u.m/u.s).value
-                #vz = vel_xyz.z.to(u.m/u.s).value
-                #vtel_ra[i] = - vx * np.sin(self.rarad) + vy * np.cos(self.rarad)
-                #vtel_dec[i] = - vx * np.sin(self.decrad) * np.cos(self.rarad) - vy * np.sin(self.decrad) * np.sin(self.rarad) + vz * np.cos(self.decrad)
-            #apply correction to velocity from Earth's rotation (careful: must be averaged and is already included in p(t) )
-            #self.vtel_vec = self.vtel_vec + np.array([vtel_ra,vtel_dec])
+                vx = vel_xyz.x.to(u.m/u.s).value
+                vy = vel_xyz.y.to(u.m/u.s).value
+                vz = vel_xyz.z.to(u.m/u.s).value
+                vtel_ra[i] = - vx * np.sin(self.rarad) + vy * np.cos(self.rarad)
+                vtel_dec[i] = - vx * np.sin(self.decrad) * np.cos(self.rarad) - vy * np.sin(self.decrad) * np.sin(self.rarad) + vz * np.cos(self.decrad)
+            #apply correction to velocity from Earth's rotation (careful: varies during observation and is already included in p(t) where it is used)
+            if include_earth_rotation_in_veff:
+                self.vtel_vec = self.vtel_vec + np.array([vtel_ra,vtel_dec])
             #save position of telescope
             self.p_vec = np.array([p_ra,p_dec])
         
@@ -1681,7 +1682,43 @@ class Evolution_Two1DScreens:
             Dt = p_par/Veff
         
         return Dt
-        
+    
+class Evolution_One1DScreens(Evolution_Two1DScreens):
+    def compute(self,**kwargs):
+        #load free parameters
+        a_x = kwargs.get("a_x",0.)*np.pi/180.
+        D_x = kwargs.get("D_x",1.)*pc
+        V_x = kwargs.get("V_x",0.)*1000.
+        D_s = kwargs.get("D_s",3.)*pc
+        PMRA = kwargs.get("PMRA",0.)*mas/year
+        PMDEC = kwargs.get("PMDEC",0.)*mas/year
+        if D_x<=0. or D_s<=D_x:
+            raise ValueError
+        #pulsar velocity vector
+        V_s_ra = PMRA*D_s
+        V_s_dec = PMDEC*D_s
+        V_s_vec = np.array([V_s_ra,V_s_dec])
+        #anisotropy axis
+        uv_x_par = np.array([np.cos(a_x), np.sin(a_x)])
+        uv_x_ort = np.array([-np.sin(a_x), np.cos(a_x)])
+        #derived quantities
+        D_xs = D_s-D_x
+        #dictionary of results
+        zetas = {}
+        #independent screens effective quantities
+        Deff1_x = D_x*D_s/D_xs
+        Veff_x_vec = self.vtel_vec + D_x/D_xs*V_s_vec[:,na]
+        Veff1_x = np.dot(np.swapaxes(Veff_x_vec,0,1),uv_x_par) - D_s/D_xs*V_x
+        zetas.update({"Deff1_x":Deff1_x,"Veff1_x":Veff1_x,"Veff_x_vec":np.swapaxes(Veff_x_vec,0,1)})
+        #arc parameters
+        zeta1_x = np.sqrt(1./(2.*v_c*Deff1_x))*np.abs(Veff1_x)
+        zetas.update({"zeta1_x":zeta1_x})
+        #Compute time shift (first screen) relative to center of Earth
+        p_par = np.dot(np.swapaxes(self.p_vec,0,1), uv_x_par)
+        Dt_1x = p_par/Veff1_x
+        zetas.update({"Dt_1x":Dt_1x})
+        #return as dictionary
+        return zetas
         
         
 class DM_integration_1D:

@@ -56,7 +56,7 @@ def draw_canvas(plot_width = 1200, plot_height = 900, plot_dpi = 100, plot_botto
 def colormesh(x,y,f_xy,ax,x_sampling=1,y_sampling=1,cmap='viridis',vmin=None,vmax=None,log10=False):
     #Preprocess data
     # - downsampling
-    f_xy = block_reduce(f_xy, block_size=(x_sampling,y_sampling), func=np.mean)
+    f_xy = block_reduce(f_xy, block_size=(x_sampling,y_sampling), func=np.nanmean)
     coordinates = np.array([x,x])
     coordinates = block_reduce(coordinates, block_size=(1,x_sampling), func=np.mean, cval=x[-1])
     x = coordinates[0,:]
@@ -520,16 +520,20 @@ def scintscales(t_shift,nu_shift,ACF,ccorr_t,t_model_ACF,ccorr_nu,nu_model_ACF,f
     nu_min = kwargs.get("nu_min",np.min(nu_shift)/yscale)
     nu_max = kwargs.get("nu_max",np.max(nu_shift)/yscale)
     model_color = kwargs.get("model_color",'tab:blue')
+    #corr_max = kwargs.get("corr_max",np.max(ccorr_nu))
+    #corr_min = kwargs.get("corr_min",np.min(ccorr_nu))
 
     ax1 = plt.subplot2grid((4, 4), (1, 0), colspan=3, rowspan=3)
     ax2 = plt.subplot2grid((4, 4), (1, 3), rowspan=3)
     ax3 = plt.subplot2grid((4, 4), (0, 0), colspan=3)
     
-    im = colormesh(t_shift/xscale,nu_shift/yscale,ACF,ax1,x_sampling=t_sampling,y_sampling=nu_sampling,cmap=cmap,vmin=vmin,vmax=vmax,log10=False)
+    colormesh(t_shift/xscale,nu_shift/yscale,ACF,ax1,x_sampling=t_sampling,y_sampling=nu_sampling,cmap=cmap,vmin=vmin,vmax=vmax,log10=False)
     ax2.plot( ccorr_nu, nu_shift/yscale, color='k')
     ax2.plot(nu_model_ACF, nu_shift/yscale, color=model_color, linestyle='--')
+    #ax2.set_xlim([corr_min,corr_max])
     ax3.plot( t_shift/xscale, ccorr_t, color='k')
     ax3.plot( t_shift/xscale, t_model_ACF, color=model_color, linestyle='--')
+    #ax3.set_ylim([corr_min,corr_max])
     
     
     figure.suptitle(title)
@@ -537,10 +541,10 @@ def scintscales(t_shift,nu_shift,ACF,ccorr_t,t_model_ACF,ccorr_nu,nu_model_ACF,f
     ax3.xaxis.tick_top()
     ax2.yaxis.tick_right()
     ax2.yaxis.set_label_position("right")
-    ax3.set_yticks([])
+    #ax3.set_yticks([])
     ax1.set_xticks([])
     ax1.set_yticks([])
-    ax2.set_xticks([])
+    #ax2.set_xticks([])
     ax3.set_xlabel(xlabel)
     ax2.set_ylabel(ylabel)
     ax1.set_xlim([t_min,t_max])

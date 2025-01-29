@@ -7,7 +7,7 @@ import progressbar
 import scipy
 import scipy.interpolate as interp
 from scipy.sparse.linalg import eigsh
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit,minimize
 import matplotlib as mpl
 import matplotlib.style as mplstyle
 mplstyle.use('fast')
@@ -3201,6 +3201,198 @@ class Efield:
             mus_object.nu = nus
             mus_object.mu = mu
             mus_object.save_eigenvectors()
+            
+class Efield_fromTHTH(Efield):
+    def compute(self,DS_in,kwargs):
+        #load and check data
+        if not DS_in.type == "intensity":
+            raise TypeError
+            
+        N_th = kwargs.get("N_th",100)
+        Dt = kwargs.get("Dt",10.*minute)
+        Dnu = kwargs.get("Dnu",100.*MHz)
+        npad = kwargs.get("npad",3)
+        t_box = kwargs.get("t_box",1)
+        nu_box = kwargs.get("nu_box",1)
+        tau_max = kwargs.get("tau_max",1.*mus)
+        zeta = kwargs.get("zeta",1.)
+        
+        mus_object = kwargs.get("provide_mus",None)
+        
+        DS = generic_intensity(DS_in.t,DS_in.nu,DS_in.DS,DS_in.mjd)
+        DS.downsample(t_sampling=t_box,nu_sampling=nu_box)
+        
+        tchunk = int(np.rint(Dt/DS.dt))
+        nuchunk = int(np.rint(Dnu/DS.dnu))
+        
+        def find_chunks(N,Nc):
+            """
+            N : length of list
+            Nc : Maximum number of entries per chunk
+            """
+            #number of chunks
+            Ns = (2*N)//Nc
+            #optimal shift of chunk (float)
+            shift = N/(Ns+1.)
+            #create list by rounding to integers
+            starts = [np.rint(i*shift).astype(int) for i in range(Ns)]
+            #mids = [np.rint((i+1)*shift).astype(int) for i in range(Ns)]
+            ends = [np.rint((i+2)*shift).astype(int) for i in range(Ns)]
+            return starts,ends,int(shift)
+        
+        #preparations
+        #fD_to_rad = v_c/DS.nu0/veff
+        #self.th = np.linspace(-fD_max*fD_to_rad,fD_max*fD_to_rad,num=N_th,dtype=float,endpoint=True)
+        #th1 = np.ones((N_th,N_th))*self.th
+        #th2 = th1.T
+        
+        stau_max = np.sqrt(tau_max)
+        staus = np.linspace(-stau_max,stau_max,num=N_th,dtype=float,endpoint=True)
+        th1 = np.ones((N_th,N_th))*staus
+        th2 = th1.T
+        
+        Efield = np.zeros(DS.DS.shape,dtype=complex)
+        #- split into overlapping chunks
+        t_starts,t_ends,t_shift = find_chunks(DS.N_t,tchunk)
+        nu_starts,nu_ends,nu_shift = find_chunks(DS.N_nu,nuchunk)
+        N_tchunk = len(t_starts)
+        N_nuchunk = len(nu_starts)
+        # #Compute size and number of chunks
+        # hnuchunk = int(nuchunk/2)
+        # htchunk = int(tchunk/2)
+        # N_tchunk=(DS.N_t-htchunk)//htchunk
+        # N_nuchunk=(DS.N_nu-hnuchunk)//hnuchunk
+        
+        save_mus = False
+        if mus_object != None:
+            save_mus = True
+            mu = np.empty((N_th,N_tchunk,N_nuchunk),dtype=complex)
+            ts = np.empty(N_tchunk,dtype=float)
+            nus = np.empty(N_nuchunk,dtype=float)
+        
+        ###reference from similar code:
+        # stau_max = np.sqrt(tau_max)
+        # staus = np.linspace(-stau_max,stau_max,num=N_th,dtype=float,endpoint=True)
+        # th1 = np.ones((N_th,N_th))*staus
+        # stau_to_fD = 2.*f0_evo*zeta
+        # tau_inv = (((th1**2-th2**2)-tau[0]+dtau/2)//dtau).astype(int)
+        # fd_inv = ((stau_to_fD*(th1-th2)-fd[0]+dfd/2)//dfd).astype(int)
+        # eta = 1./(2.*f0_evo*zeta)**2
+        # thth *= np.sqrt(np.abs(2*eta*stau_to_fD*(th2-th1))) #flux conervation
+            
+        #main computation
+        bar = progressbar.ProgressBar(maxval=N_nuchunk, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+        bar.start()
+        for fc in range(N_nuchunk):
+            bar.update(fc)
+            #select Chunk and determine curvature
+            l_nuchunk = nu_ends[fc]-nu_starts[fc]
+            nu = DS.nu[nu_starts[fc]:nu_ends[fc]]
+            nu0 = np.mean(nu)
+            #rad_to_fD = veff*nu0/v_c
+            #eta = v_c*Deff/(2.*nu0**2*veff**2)
+            stau_to_fD = 2.*nu0*zeta
+            eta = 1./(2.*nu0*zeta)**2
+            #Map back to time/frequency space
+            fD_map = (staus[na,:]-staus[:,na])*stau_to_fD
+            tau_map = (staus[na,:]**2-staus[:,na]**2)
+            # combine by windowing
+            fmsk = np.ones(l_nuchunk)
+            if fc>0:
+                fmsk[:nu_shift] = np.sin((np.pi/2)*np.linspace(0,nu_shift-1,nu_shift)/nu_shift)**2
+            if fc<N_nuchunk-1:
+                fmsk[-nu_shift:] = np.cos((np.pi/2)*np.linspace(0,nu_shift-1,nu_shift)/nu_shift)**2
+            for tc in range(N_tchunk):
+                t = DS.t[t_starts[tc]:t_ends[tc]]
+                l_tchunk = t_ends[tc]-t_starts[tc]
+                tmsk = np.ones(l_tchunk)
+                dspec = DS.DS[t_starts[tc]:t_ends[tc],nu_starts[fc]:nu_ends[fc]]
+                dspec = dspec - np.mean(dspec)
+                #Pad
+                dspec_pad = np.pad(dspec,((0,npad*dspec.shape[0]),(0,npad*dspec.shape[1])),mode='constant',constant_values=dspec.mean())
+                #compute secondary spectrum
+                SS = np.fft.fftshift(np.fft.fft2(dspec_pad))
+                fD = np.fft.fftshift(np.fft.fftfreq((npad+1)*t.shape[0],t[1]-t[0]))
+                tau = np.fft.fftshift(np.fft.fftfreq((npad+1)*nu.shape[0],nu[1]-nu[0]))
+                dfD = np.diff(fD).mean()
+                dtau = np.diff(tau).mean()
+                fD_edges = np.linspace(fD[0]-dfD/2.,fD[-1]+dfD/2.,fD.shape[0]+1,endpoint=True)
+                tau_edges = np.linspace(tau[0]-dtau/2.,tau[-1]+dtau/2.,tau.shape[0]+1,endpoint=True)
+                #Compute thth diagram
+                #tau_inv = ((eta*((th1*rad_to_fD)**2-(th2*rad_to_fD)**2)-tau[0]+dtau/2)//dtau).astype(int)
+                #fD_inv = ((th1*rad_to_fD-th2*rad_to_fD-fD[0]+dfD/2)//dfD).astype(int)
+                tau_inv = (((th1**2-th2**2)-tau[0]+dtau/2)//dtau).astype(int)
+                fD_inv = ((th1*stau_to_fD-th2*stau_to_fD-fD[0]+dfD/2)//dfD).astype(int)
+                thth = np.zeros((N_th,N_th), dtype=complex)
+                pnts = (tau_inv > 0) * (tau_inv < tau.shape[0]) * (fD_inv > 0) * (fD_inv < fD.shape[0])
+                thth[pnts] = SS[fD_inv[pnts],tau_inv[pnts]]
+                #thth *= np.sqrt(np.abs(2*eta*(th2-th1))) #flux conervation
+                thth *= np.abs(2*eta*(th2-th1)) #Jacobian
+                thth -= np.tril(thth) #make hermitian
+                thth += np.conjugate(np.triu(thth).T)
+                thth -= np.diag(np.diag(thth))
+                thth -= np.diag(np.diag(thth[::-1, :]))[::-1, :]
+                thth = np.nan_to_num(thth)
+                #Compute dominant eigenvector
+                w,V = eigsh(thth,1)
+                w = np.abs(w[0]) #added abs to get valid square roots
+                V = V[:,0]
+                eigenvectors = np.conjugate(V)*np.sqrt(w)*N_th
+                eigenvectors = np.nan_to_num(eigenvectors)
+                #Construct 1D theta-theta
+                thth1D = np.zeros((N_th,N_th), dtype=complex)
+                thth1D[thth1D.shape[0]//2,:] = eigenvectors
+                with np.errstate(all='ignore'):
+                    recov=np.histogram2d(np.ravel(fD_map),
+                                 np.ravel(tau_map),
+                                 bins=(fD_edges,tau_edges),
+                                 weights=np.ravel(thth1D/np.sqrt(np.abs(2*eta*fD_map.T))).real)[0] +\
+                            np.histogram2d(np.ravel(fD_map),
+                                         np.ravel(tau_map),
+                                         bins=(fD_edges,tau_edges),
+                                         weights=np.ravel(thth1D/np.sqrt(np.abs(2*eta*fD_map.T))).imag)[0]*1j
+                    norm=np.histogram2d(np.ravel(fD_map),
+                                         np.ravel(tau_map),
+                                         bins=(fD_edges,tau_edges))[0]
+                    recov /= norm
+                recov = np.nan_to_num(recov)
+                model_E = np.fft.ifft2(np.fft.ifftshift(recov))[:dspec.shape[0],:dspec.shape[1]]
+                #Combine chunks
+                old = Efield[t_starts[tc]:t_ends[tc],nu_starts[fc]:nu_ends[fc]]
+                new = model_E
+                old_amps = np.abs(old)
+                new_amps = np.abs(new)
+                diff = old*np.conj(new)
+                phi = np.angle(np.sum(diff))
+                model_E = model_E*np.exp(1.j*phi)
+                tmsk = np.ones(l_tchunk)
+                if tc>0:
+                    tmsk[:t_shift] = np.sin((np.pi/2)*np.linspace(0,t_shift-1,t_shift)/t_shift)**2
+                if tc<N_tchunk-1:
+                    tmsk[-t_shift:] = np.cos((np.pi/2)*np.linspace(0,t_shift-1,t_shift)/t_shift)**2
+                Efield[t_starts[tc]:t_ends[tc],nu_starts[fc]:nu_ends[fc]] += model_E*tmsk[:,na]*fmsk[na,:]
+                
+                if save_mus:
+                    nus[fc] = nu0
+                    ts[tc] = np.mean(t)
+                    mu[:,tc,fc] = eigenvectors*np.exp(1.j*phi)
+        bar.finish()
+        
+        interp = scipy.interpolate.RegularGridInterpolator((DS.t,DS.nu),Efield,bounds_error=False,fill_value=None)
+        t_grid,nu_grid = np.meshgrid(DS_in.t,DS_in.nu,indexing='ij')
+        self.Efield = interp((t_grid,nu_grid))
+        
+        self.t = DS_in.t
+        self.nu = DS_in.nu
+        self.amplitude = np.abs(self.Efield)
+        self.phase = np.angle(self.Efield)
+        
+        if save_mus:
+            mus_object.stau = staus
+            mus_object.t = ts
+            mus_object.nu = nus
+            mus_object.mu = mu
+            mus_object.save_eigenvectors()
         
 class generic_Efield(Efield):
     def __init__(self,t,nu,EF):
@@ -3772,14 +3964,22 @@ class ACF_DS:
             
             self.t_shift = self.t_shift - np.mean(self.t_shift)
             self.nu_shift = self.nu_shift - np.mean(self.nu_shift)
-            data = (data - np.mean(data))/np.std(data)
+            data = (data - np.mean(data))/np.mean(data)
             
-            self.ACF = scipy.signal.correlate2d(data,data,mode='same')
+            self.ACF = scipy.signal.correlate2d(data,data,mode='same')/len(self.t_shift)/len(self.nu_shift)
         else:
-            self.ACF = np.fft.fftshift(np.fft.ifft2( np.fft.fft2(DS.DS) * np.fft.fft2(DS.DS).conj() ))
-            self.ACF = np.real(self.ACF)
             self.t_shift = np.linspace(-DS.timespan/2., DS.timespan/2., DS.N_t, endpoint=DS.N_t%2)
             self.nu_shift = np.linspace(-DS.bandwidth/2., DS.bandwidth/2., DS.N_nu, endpoint=DS.N_nu%2)
+            data = DS.DS
+            mask = np.zeros(data.shape,dtype=bool)
+            mask[data==0.] = True
+            print("Percent masked:",np.mean(mask)*100.)
+            data[mask] = np.nan
+            data = (data - np.nanmean(data))/np.nanmean(data)
+            data[mask] = 0.
+            weight = len(self.t_shift)*len(self.nu_shift)*(1.-np.mean(mask))
+            self.ACF = np.fft.fftshift(np.fft.ifft2( np.fft.fft2(data) * np.fft.fft2(data).conj() ))/weight
+            self.ACF = np.real(self.ACF)
             
     def fit_tscale(self,**kwargs):
         # Take slice through center of cross-correlation along time axis
@@ -3813,7 +4013,7 @@ class ACF_DS:
         # Take slice through center of cross-correlation along freq axis
         # Ignoring zero component with noise-noise correlation
         ACF_shifted = np.fft.ifftshift(self.ACF)
-        ccorr_nu = ACF_shifted[1] + ACF_shifted[-1]
+        ccorr_nu = (ACF_shifted[1] + ACF_shifted[-1])/2
         ccorr_nu -= np.median(ccorr_nu)
         ccorr_nu /= np.max(ccorr_nu)
         ccorr_nu_shift = np.copy(ccorr_nu)
@@ -3823,7 +4023,10 @@ class ACF_DS:
             return A*np.exp( -x**2 / (2*sigma**2) *np.log(2) ) + C
         
         def Lorentzian(x, sigma, A, C):
-            return A/( 1 + x**2 / (2*sigma**2) ) + C
+            return A/( 1 + x**2 / (sigma**2) ) + C
+        
+        # def Lorentzian_mu(x, sigma):
+        #     return 1/( 1 + x**2 / (sigma**2) )
             
         # Fit the slices in frequency and time with a Gaussian
         # p0 values are just a starting guess
@@ -3831,7 +4034,7 @@ class ACF_DS:
         dnu = self.nu_shift[1] - self.nu_shift[0]
         is_sigma = np.argwhere(ccorr_nu_shift<np.exp(-1./2.))
         i_sigma = np.min(is_sigma)
-        nuiss_0 = kwargs.get("muiss_0",i_sigma*dnu)
+        nuiss_0 = kwargs.get("nuiss_0",i_sigma*dnu)
         p0 = [nuiss_0, 1., 0]
         popt, pcov = curve_fit(Lorentzian, self.nu_shift[np.abs(self.nu_shift)<=dnu_fit_max], ccorr_nu[np.abs(self.nu_shift)<=dnu_fit_max], p0=p0)
         #nuscint = np.sqrt(2*np.log(2)) * abs(popt[0])
@@ -3840,8 +4043,132 @@ class ACF_DS:
         nuscinterr = np.sqrt(pcov[0,0])
         nu_model_ACF = Lorentzian(self.nu_shift, popt[0], popt[1], popt[2])
         
-        return nuscint,nuscinterr,ccorr_nu,nu_model_ACF
+        # # From already fitted scintillation bandwidth, fit peak ignoring central pixel of central slice that is correctly scaled
+        # ACF_shifted = np.fft.ifftshift(self.ACF)
+        # ccorr_nu = ACF_shifted[0]
+        # ccorr_nu = np.fft.fftshift(ccorr_nu)
+        # nu_shift_fit = self.nu_shift[np.abs(self.nu_shift)<=3.*nuscint]
+        # ACF_fit = ccorr_nu[np.abs(self.nu_shift)<=1.*nuscint]
+        # modindex = np.sqrt(np.median(ACF_fit/Lorentzian_mu(nu_shift_fit,nuscint)))
         
+        # nu_model_ACF = nu_model_ACF/np.max(nu_model_ACF)*modindex**2
+        # ccorr_nu = ccorr_nu/np.max(nu_model_ACF)*modindex**2
+        
+        return nuscint,nuscinterr,ccorr_nu,nu_model_ACF #,modindex
+    
+    def fit2D(self,**kwargs):
+        
+        def modelfunc(Dt,Dnu,nu_s,t_s,modindex,offset): #
+            model = np.empty((len(Dt),len(Dnu)),dtype=float)
+            model[:,:] = (modindex**2 /( 1 + Dnu[na,:]**2/nu_s**2 ) * np.exp( -Dt[:,na]**2/(2*t_s**2) ) + 1)*(1+offset) - 1
+            return model
+        
+        cutoff = kwargs.get("cutoff",10)
+        nu_s_cut = kwargs.get("nu_s_cut",None)
+        t_s_cut = kwargs.get("t_s_cut",None)
+            
+        print("Starting fit ..")
+        #print(np.max(self.ACF))
+        ACF_shifted = np.fft.ifftshift(self.ACF)
+        
+        ccorr_t = ACF_shifted[:,1] + ACF_shifted[:,-1]
+        ccorr_t -= np.median(ccorr_t)
+        ccorr_t /= np.max(ccorr_t)
+        dt = self.t_shift[1] - self.t_shift[0]
+        is_sigma = np.argwhere(ccorr_t<np.exp(-1./2.))
+        i_sigma = np.min(is_sigma)
+        t_s_p0 = i_sigma*dt
+        # ccorr_t = np.fft.fftshift((ACF_shifted[:,1] + ACF_shifted[:,-1])/2)
+        ccorr_t = np.fft.fftshift(ACF_shifted[:,0])
+        
+        ccorr_nu = (ACF_shifted[1] + ACF_shifted[-1])/2
+        ccorr_nu -= np.median(ccorr_nu)
+        ccorr_nu /= np.max(ccorr_nu)
+        dnu = self.nu_shift[1] - self.nu_shift[0]
+        is_sigma = np.argwhere(ccorr_nu<np.exp(-1./2.))
+        i_sigma = np.min(is_sigma)
+        nu_s_p0 = i_sigma*dnu
+        ccorr_nu = np.fft.fftshift((ACF_shifted[1] + ACF_shifted[-1])/2)
+        
+        Dt_fit = self.t_shift[np.abs(self.t_shift)<=cutoff*t_s_p0]
+        Dnu_fit = self.nu_shift[np.abs(self.nu_shift)<=cutoff*nu_s_p0]
+        ACF_fit = self.ACF[np.abs(self.t_shift)<=cutoff*t_s_p0]
+        ACF_fit = ACF_fit[:,np.abs(self.nu_shift)<=cutoff*nu_s_p0]
+        
+        if not nu_s_cut==None:
+            ACF_fit = ACF_fit[:,np.abs(Dnu_fit)<=nu_s_cut]
+            Dnu_fit = Dnu_fit[np.abs(Dnu_fit)<=nu_s_cut]
+        if not t_s_cut==None:
+            ACF_fit = ACF_fit[np.abs(Dt_fit)<=t_s_cut]
+            Dt_fit = Dt_fit[np.abs(Dt_fit)<=t_s_cut]
+            
+        # ACF_fit = ACF_fit[np.abs(Dt_fit)>=0.1*t_s_p0]
+        # ACF_fit = ACF_fit[:,np.abs(Dnu_fit)>=0.1*nu_s_p0]
+        # Dt_fit = Dt_fit[np.abs(Dt_fit)>=0.1*t_s_p0]
+        # Dnu_fit = Dnu_fit[np.abs(Dnu_fit)>=0.1*nu_s_p0]
+        
+        def chi2(x):
+            nu_s,t_s,modindex,offset = x #
+            model_ACF = modelfunc(Dt_fit, Dnu_fit,nu_s*nu_s_p0,t_s*t_s_p0,modindex,offset) #
+            
+            ACF_fit_shifted = np.fft.ifftshift(ACF_fit)
+            ACF_fit_shifted[0,:] = 0.
+            nu_ACF_fit = np.fft.fftshift((ACF_fit_shifted[1] + ACF_fit_shifted[-1])/2)
+            #t_ACF_fit = np.fft.fftshift((ACF_fit_shifted[:,1] + ACF_fit_shifted[:,-1])/2)
+            t_ACF_fit = np.fft.fftshift(ACF_fit_shifted[:,0])
+            
+            model_ACF_shifted = np.fft.ifftshift(model_ACF)
+            model_ACF_shifted[0,:] = 0.
+            nu_model_ACF = np.fft.fftshift((model_ACF_shifted[1] + model_ACF_shifted[-1])/2)
+            t_model_ACF = np.fft.fftshift((model_ACF_shifted[:,1] + model_ACF_shifted[:,-1])/2)
+            t_model_ACF = np.fft.fftshift(model_ACF_shifted[:,0])
+            
+            chi2 = np.sum((nu_model_ACF-nu_ACF_fit)**2)+np.sum((t_model_ACF-t_ACF_fit)**2)
+            #print("chi2={0}:\t{1}".format(chi2,x))
+            return chi2
+        
+        initial = [1.,1.,1.,0.] #
+        bounds = [(0.1,10.),(0.1,10.),(0.,None),(None,None)] #
+        soln = minimize(chi2, initial,bounds=bounds)
+        
+        nu_s,t_s,modindex,offset = soln.x #
+        t_s *= t_s_p0
+        nu_s *= nu_s_p0
+        print(soln.x)
+        #print(ACF_fit-modelfunc(Dt_fit, Dnu_fit,nu_s,t_s,modindex,offset))
+        
+        # nu_s_err = np.sqrt(pcov[0,0])*nu_s_p0
+        # t_s_err = np.sqrt(pcov[1,1])*t_s_p0
+        # modindex_err = np.sqrt(pcov[2,2])
+        
+        model_ACF = modelfunc(self.t_shift, self.nu_shift,nu_s,t_s,modindex,offset) #
+        model_ACF_shifted = np.fft.ifftshift(model_ACF)
+        nu_model_ACF = np.fft.fftshift((model_ACF_shifted[1] + model_ACF_shifted[-1])/2)
+        #t_model_ACF = np.fft.fftshift((model_ACF_shifted[:,1] + model_ACF_shifted[:,-1])/2)
+        t_model_ACF = np.fft.fftshift(model_ACF_shifted[:,0])
+        
+        #assert np.mean((model_ACF-self.ACF)**2)<np.mean((modelfunc(self.t_shift, self.nu_shift,nu_s_p0,t_s_p0,1.,0.)-self.ACF)**2)
+        
+        return nu_s,t_s,modindex,model_ACF,ccorr_t,ccorr_nu,t_model_ACF,nu_model_ACF #,nu_s_err,t_s_err,modindex_err
+        
+    
+    # def fit_modindex(self,nuscint,**kwargs):
+    #     # From already fitted scintillation bandwidth, fit peak ignoring central pixel of central slice that is correctly scaled
+    #     ACF_shifted = np.fft.ifftshift(self.ACF)
+    #     ccorr_nu = ACF_shifted[0]
+    #     ccorr_nu = np.fft.fftshift(ccorr_nu)
+        
+    #     def Lorentzian_mu(x, A,C):
+    #         return A/( 1 + x**2 / (nuscint**2) ) + C
+        
+    #     dnu_fit_max = kwargs.get("dnu_fit_max",3.*nuscint)
+    #     p0 = [1.,0.]
+    #     popt, pcov = curve_fit(Lorentzian_mu, self.nu_shift[np.abs(self.nu_shift)<=dnu_fit_max], ccorr_nu[np.abs(self.nu_shift)<=dnu_fit_max], p0=p0)
+    #     modindex = np.sqrt(abs(popt[0]))
+    #     modindex_err = np.sqrt(pcov[0,0])
+    #     nu_model_ACF = Lorentzian_mu(self.nu_shift, *popt)
+        
+    #     return modindex,modindex_err,ccorr_nu,nu_model_ACF
         
 class EV_backtrafo(eigenvectors):
         
@@ -4218,6 +4545,158 @@ class zeta_eigenvalues:
         fit_result += np.mean(self.EV-fit_result)
         
         return zeta1_fit,zeta1_sig,zeta2_fit,zeta2_sig,self.zetas,fit_result
+    
+class zeta_EV_shift:
+    type = "zeta eigenvalues and shift"
+    def __init__(self,DS,**kwargs):
+        self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","zeta_EV_shift.npz")
+        if self.data_path==None:
+            self.compute(DS,kwargs)
+        else:
+            if not os.path.exists(self.data_path):
+                os.makedirs(self.data_path)
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
+                self.compute(DS,kwargs)
+                np.savez(file_data,zetas=self.zetas,fD_shifts=self.fD_shifts,EVs=self.EVs,t=self.t,nu=self.nu,mjd=self.mjd)
+            else:
+                if os.path.exists(file_data):
+                    lib_data = np.load(file_data)
+                    self.zetas = lib_data["zetas"]
+                    self.fD_shifts = lib_data["fD_shifts"]
+                    self.EVs = lib_data["EVs"]
+                    self.t = lib_data["t"]
+                    self.nu = lib_data["nu"]
+                    self.mjd = lib_data["mjd"]
+                    self.EVs = lib_data["EVs"]
+                else:
+                    raise KeyError
+        self.recalculate()
+        
+    def recalculate(self):
+        #provide some useful parameters
+        self.N_zeta = len(self.zetas)
+        self.N_shift = len(self.fD_shifts)
+        
+    def compute(self,DS,kwargs):
+        if not DS.type == "intensity":
+            raise TypeError
+        N_th = kwargs.get("N_th",51)
+        tchunk = kwargs.get("tchunk",60)
+        nuchunk = kwargs.get("nuchunk",200)
+        npad = kwargs.get("npad",3)
+        tau_max = kwargs.get("tau_max",15.*musec)
+        fD_shift_max = kwargs.get("fD_shift_max",1.*mHz)
+        N_zeta = kwargs.get("N_zeta",20)
+        N_shift = kwargs.get("N_shift",20)
+        zeta_min = kwargs.get("zeta_min",0.6e-9)
+        zeta_max = kwargs.get("zeta_max",2.2e-9)
+        
+        stau_max = np.sqrt(tau_max)
+        
+        def find_chunks(N,Nc):
+            """
+            N : length of list
+            Nc : Maximum number of entries per chunk
+            """
+            #number of chunks
+            Ns = (2*N)//Nc
+            #optimal shift of chunk (float)
+            shift = N/(Ns+1.)
+            #create list by rounding to integers
+            starts = [np.rint(i*shift).astype(int) for i in range(Ns)]
+            #mids = [np.rint((i+1)*shift).astype(int) for i in range(Ns)]
+            ends = [np.rint((i+2)*shift).astype(int) for i in range(Ns)]
+            return starts,ends,int(shift)
+        
+        #- split into overlapping chunks
+        t_starts,t_ends,t_shift = find_chunks(DS.N_t,tchunk)
+        nu_starts,nu_ends,nu_shift = find_chunks(DS.N_nu,nuchunk)
+        N_tchunk = len(t_starts)
+        N_nuchunk = len(nu_starts)
+        
+        staus = np.linspace(-stau_max,stau_max,num=N_th,dtype=float,endpoint=True)
+        self.EVs = np.zeros((N_tchunk,N_nuchunk,N_zeta,N_shift))
+        self.mjd = np.zeros(N_tchunk)
+        self.t = np.zeros(N_tchunk)
+        self.nu = np.zeros(N_nuchunk)
+        self.zetas = np.linspace(zeta_min,zeta_max,num=N_zeta)
+        self.fD_shifts = np.linspace(-fD_shift_max,fD_shift_max,num=N_shift,endpoint=True)
+        
+        #main computation
+        for tc in range(N_tchunk):
+            t_chunk = DS.t[t_starts[tc]:t_ends[tc]]
+            mjd_chunk = DS.mjd[t_starts[tc]:t_ends[tc]]
+            self.t[tc] = np.mean(t_chunk)
+            self.mjd[tc] = np.mean(mjd_chunk)
+            print("{0}/{1}: {2} - {3} ({4})".format(tc+1,N_tchunk,t_chunk[0],t_chunk[-1],len(t_chunk)))
+            bar = progressbar.ProgressBar(maxval=N_nuchunk, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+            bar.start()
+            for fc in range(N_nuchunk):
+                bar.update(fc)
+                #print(tc,fc)
+                dspec = DS.DS[t_starts[tc]:t_ends[tc],nu_starts[fc]:nu_ends[fc]]
+                dspec = dspec - dspec.mean()
+                nu_chunk = DS.nu[nu_starts[fc]:nu_ends[fc]]
+                self.nu[fc] = nu_chunk.mean()
+                dspec_pad = np.pad(dspec,((0,npad*dspec.shape[0]),(0,npad*dspec.shape[1])),mode='constant',constant_values=dspec.mean())
+
+                ##Form SS and coordinate arrays
+                SS = np.fft.fftshift(np.fft.fft2(dspec_pad))
+                fd = np.fft.fftshift(np.fft.fftfreq((npad+1)*t_chunk.shape[0],t_chunk[1]-t_chunk[0]))
+                tau = np.fft.fftshift(np.fft.fftfreq((npad+1)*nu_chunk.shape[0],nu_chunk[1]-nu_chunk[0]))
+                
+                ##Setup for chisq search
+                eigs_zeta = np.zeros((N_zeta,N_shift))
+                
+                ##Determine chisq for each delay drift
+                for i in range(N_zeta):
+                    zeta = self.zetas[i]
+                    stau_to_fD = 2.*self.nu[fc]*zeta
+                    th1 = np.ones((N_th,N_th))*staus
+                    th2 = th1.T
+                    dfd = np.diff(fd).mean()
+                    dtau = np.diff(tau).mean()
+                    tau_inv = (((th1**2-th2**2)-tau[0]+dtau/2)//dtau).astype(int)
+                    for i_shift in range(N_shift):
+                        fd_inv = ((stau_to_fD*(th1-th2)-fd[0]-self.fD_shifts[i_shift]+dfd/2)//dfd).astype(int)
+                        thth = np.zeros((N_th,N_th), dtype=complex)
+                        pnts = (tau_inv > 0) * (tau_inv < tau.shape[0]) * (fd_inv > 0) * (fd_inv < fd.shape[0])
+                        thth[pnts] = SS[fd_inv[pnts],tau_inv[pnts]]
+                        eta = 1./(2.*self.nu[fc]*zeta)**2
+                        thth *= np.sqrt(np.abs(2*eta*stau_to_fD*(th2-th1))) #flux conervation
+                        #thth *= np.abs(2*eta*stau_to_fD*(th2-th1)) #Jacobian
+                        thth /= np.mean(np.abs(thth))
+                        if 1:
+                            thth -= np.tril(thth) #make hermitian
+                            thth += np.conjugate(np.triu(thth).T)
+                            thth -= np.diag(np.diag(thth))
+                            thth -= np.diag(np.diag(thth[::-1, :]))[::-1, :]
+                            thth = np.nan_to_num(thth)
+                        else:
+                            #Produces a similar but slightly different result
+                            thth = (thth+np.conj(np.transpose(thth)))/2. #assert hermitian
+                        ##Find first eigenvector and value
+                        v0 = thth[thth.shape[0]//2,:]
+                        v0 /= np.sqrt((np.abs(v0)**2).sum())
+                        try:
+                            w,V = eigsh(thth,1,v0=v0,which='LA')
+                            eigs_zeta[i,i_shift] = np.abs(w[0])
+                        except:
+                            print("did not find any eigenvalues to sufficient accuracy")
+                            eigs_zeta[i,i_shift] = np.nan
+                    
+                if not np.isnan(eigs_zeta).any():
+                    self.EVs[tc,fc,:,:] = eigs_zeta
+            bar.finish()
            
 class refracted_scintles:
     type = "refracted_scintles"

@@ -1,16 +1,18 @@
 import numpy as np
-from numpy import newaxis as na
 import os
 from ruamel.yaml import YAML
-
-import scinter_data
 
 class storage:
     def __init__(self,data_path):
         """
-        organizing the a collection of observations
+        organizing a collection of observations
         """
         self.data_path = data_path
+        if not os.path.exists(self.data_path):
+            print("Creating new storage: {0}".format(self.data_path))
+            os.mkdir(self.data_path)
+        else:
+            print("Loading storage: {0}".format(self.data_path))
         self.yaml = YAML(typ='safe')
         self.lists_file = os.path.join(self.data_path,"obs_lists.yaml")
         if os.path.exists(self.lists_file):
@@ -85,6 +87,10 @@ class measurement:
         self.results.update({"nu0":float(DS.nu0)})
         self.results.update({"timespan":float(DS.timespan)})
         self.results.update({"bandwidth":float(DS.bandwidth)})
+        self.results.update({"dt":float(DS.dt)})
+        self.results.update({"dnu":float(DS.dnu)})
+        self.results.update({"N_t":int(DS.N_t)})
+        self.results.update({"N_nu":int(DS.N_nu)})
         with open(self.logfile,'w') as writefile:
             self.yaml.dump(self.results,writefile)
             
