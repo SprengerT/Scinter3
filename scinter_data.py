@@ -981,20 +981,31 @@ class generic_visibility(visibility):
 class SecSpec_FFT(secondary_spectrum):
     def __init__(self,DS,**kwargs):
         self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","SecSpec_FFT.npz")
         if self.data_path==None:
             self.compute(DS,kwargs)
         else:
             if not os.path.exists(self.data_path):
                 os.makedirs(self.data_path)
-            file_data = os.path.join(self.data_path,"SecSpec_FFT.npz")
-            if DS!=None: #not os.path.exists(file_data):
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
                 self.compute(DS,kwargs)
                 np.savez(file_data,fD=self.fD,tau=self.tau,SS=self.SS)
             else:
-                lib_data = np.load(file_data)
-                self.fD = lib_data["fD"]
-                self.tau = lib_data["tau"]
-                self.SS = lib_data["SS"]
+                if os.path.exists(file_data):
+                    lib_data = np.load(file_data)
+                    self.fD = lib_data["fD"]
+                    self.tau = lib_data["tau"]
+                    self.SS = lib_data["SS"]
+                else:
+                    raise KeyError
         self.recalculate()
         
     def compute(self,DS,kwargs):
@@ -4134,7 +4145,7 @@ class ACF_DS:
         nu_s,t_s,modindex,offset = soln.x #
         t_s *= t_s_p0
         nu_s *= nu_s_p0
-        print(soln.x)
+        #print(soln.x)
         #print(ACF_fit-modelfunc(Dt_fit, Dnu_fit,nu_s,t_s,modindex,offset))
         
         # nu_s_err = np.sqrt(pcov[0,0])*nu_s_p0
