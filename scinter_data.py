@@ -3986,7 +3986,7 @@ class ACF_DS:
             mask[data==0.] = True
             print("Percent masked:",np.mean(mask)*100.)
             data[mask] = np.nan
-            data = (data - np.nanmean(data))/np.nanmean(data)
+            data = (data - np.nanmean(data))/np.nanstd(data)
             data[mask] = 0.
             weight = len(self.t_shift)*len(self.nu_shift)*(1.-np.mean(mask))
             self.ACF = np.fft.fftshift(np.fft.ifft2( np.fft.fft2(data) * np.fft.fft2(data).conj() ))/weight
