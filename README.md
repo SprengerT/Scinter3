@@ -1,5 +1,5 @@
 # Scinter3
-Library for analysis and simulations of scintillation data with a focus on series of single-dish observations and two screen theory.
+Library for analysis and simulations of scintillation data with a focus on series of single-dish observations and two-screen theory.
 
 ## Compilation of C++ part
 Some computationally demanding parts of code were written in C++ instead of Python and collected in the file lib_scinter.cpp. The code provides a library to be accessed in Python which was compiled on Ubuntu using the following command:
