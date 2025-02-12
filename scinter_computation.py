@@ -1683,7 +1683,7 @@ class Evolution_Two1DScreens:
         
         return Dt
     
-class Evolution_One1DScreens(Evolution_Two1DScreens):
+class Evolution_One1DScreen(Evolution_Two1DScreens):
     def compute(self,**kwargs):
         #load free parameters
         a_x = kwargs.get("a_x",0.)*np.pi/180.
