@@ -327,11 +327,8 @@ if 0:
         # plot the variation of the scales over time
     
         arr_mjd = storage.get_array(list_tutorial,"mjd0")
-        arr_nu0 = storage.get_array(list_tutorial,"nu0")
         arr_nuscint = storage.get_array(list_tutorial,"nuscint")
         arr_tscint = storage.get_array(list_tutorial,"tscint")
-        arr_zeta = storage.get_array(list_tutorial,"zeta_manual")
-        arr_zeta_err = storage.get_array(list_tutorial,"zeta_err_manual")
         
         figure = scinter_plot.draw_canvas(plot_width = 800,plot_height = 800, plot_bottom = 0.1, plot_left = 0.1, plot_wspace = 0.1, plot_hspace = 0.1, textsize=16, labelsize=12)
         ax1 = figure.add_subplot(2,1,1)
@@ -345,6 +342,13 @@ if 0:
     
     # translate the scintillation scales to something proportional to zeta and compare
     # to the zeta obtained from arc curvatures
+
+    arr_mjd = storage.get_array(list_tutorial,"mjd0")
+    arr_nu0 = storage.get_array(list_tutorial,"nu0")
+    arr_nuscint = storage.get_array(list_tutorial,"nuscint")
+    arr_tscint = storage.get_array(list_tutorial,"tscint")
+    arr_zeta = storage.get_array(list_tutorial,"zeta_manual")
+    arr_zeta_err = storage.get_array(list_tutorial,"zeta_err_manual")
     
     eta_iss = 2*np.pi*arr_tscint**2/arr_nuscint
     zeta_iss = 1./(2.*arr_nu0*np.sqrt(eta_iss))
