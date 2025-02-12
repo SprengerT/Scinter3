@@ -133,6 +133,8 @@ if 0:
     arr_zeta = storage.get_array(list_tutorial,"zeta_manual")
     arr_zeta_err = storage.get_array(list_tutorial,"zeta_err_manual")
     
+    np.savez(os.path.join(storage.data_path,"manual_fit_results.npz"),mjd=arr_mjd,zeta=arr_zeta,zeta_err=arr_zeta_err)
+    
     figure = scinter_plot.draw_canvas(plot_width = 2000,plot_height = 900, plot_bottom = 0.07, plot_left = 0.12, plot_top = 0.97, plot_right=0.95, plot_wspace = 0.1, plot_hspace = 0.1, textsize=18, labelsize=18)
     ax = figure.add_subplot(1,1,1)
     ax.errorbar(arr_mjd,arr_zeta/sqrtmus*hour,xerr=0.,yerr=arr_zeta_err/sqrtmus*hour,linestyle='',marker='o',markersize=5,color='black',label="tutorial data")
