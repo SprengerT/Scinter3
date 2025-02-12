@@ -16,5 +16,9 @@ The compiled file lib_scinter.so is provided. If you are using an incompatible O
 - skimage
 - ruamel.yaml<0.18.0
 
+# Extra packages for some examples
+- emcee
+- corner
+
 ## Usage
 Proper documentation is still missing and many parts may change in the future. Some tutorial scripts and jupiter notebooks are provided.
