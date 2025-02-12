@@ -19,6 +19,7 @@ The compiled file lib_scinter.so is provided. If you are using an incompatible O
 ### Extra packages for some examples
 - emcee
 - corner
+- h5py
 
 ## Usage
 Proper documentation is still missing and many parts may change in the future. Some tutorial scripts and jupyter notebooks are provided.
