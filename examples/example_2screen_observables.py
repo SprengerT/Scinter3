@@ -92,6 +92,10 @@ Dt_2x   : delay of scintillation pattern with respect to center of Earth due to 
 Dt_2y   : delay of scintillation pattern with respect to center of Earth due to second screen in two-screen theory
 """
 
+#If required, zeta can be translated to an arc curvature at frequency nu0 in Hertz with
+def eta_from_zeta(zeta,nu0):
+    return 1./(2.*nu0*zeta)**2
+
 ### example interactive plot showing the zetas of arc curvatures of both screens in both one-screen (radiation is unaffected by one of the screens) and two-screen (scattered at both screens) theory
 figure = scinter_plot.draw_canvas(plot_width = 1600,plot_height = 900, plot_bottom = 0.07, plot_left = 0.12, plot_top = 0.97, plot_right=0.7, plot_wspace = 0.2, plot_hspace = 0.2, textsize=14, labelsize=12)
 ax = figure.add_subplot(1,1,1)
