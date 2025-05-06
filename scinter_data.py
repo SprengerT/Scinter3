@@ -8,16 +8,13 @@ import scipy
 import scipy.interpolate as interp
 from scipy.sparse.linalg import eigsh
 from scipy.optimize import curve_fit,minimize
+from scipy import sparse
 import matplotlib as mpl
 import matplotlib.style as mplstyle
 mplstyle.use('fast')
 import matplotlib.pyplot as plt
 import skimage
 from skimage.measure import block_reduce
-
-dir_path = os.path.dirname(os.path.realpath(__file__))
-file_c = os.path.join(os.path.join(dir_path,"libcpp"),"lib_scinter.so")
-lib = ctypes.CDLL(file_c)
 
 #constants
 au = 149597870700. #m
@@ -40,85 +37,92 @@ hour = 3600.
 minute = 60.
 kms = 1000.
 
-#load C++ library for fast NuT transform
-lib.NuT.argtypes = [
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ctypes.c_int,   # N_fD
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tt [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fD [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
-] 
+try:
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    file_c = os.path.join(os.path.join(dir_path,"libcpp"),"lib_scinter.so")
+    lib = ctypes.CDLL(file_c)
 
-#load C++ library for computation of a secondary spectrum from stable gradients
-lib.SSgrad.argtypes = [
-    ctypes.c_int,   # N_t = N_fD
-    ctypes.c_int,   # N_nu = N_tau
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tt [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fD [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tau [N_nu]
-    ctypes.c_double,   # nu0
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # SS_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # SS_im [N_t*N_nu]
-] 
+    #load C++ library for fast NuT transform
+    lib.NuT.argtypes = [
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ctypes.c_int,   # N_fD
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tt [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fD [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
+    ] 
 
-#load C++ library for fast NuT transform including correction of refraction
-lib.NuT_derefracted.argtypes = [
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ctypes.c_int,   # N_fD
-    ctypes.c_double,   # nu0
-    ctypes.c_double,   # f_refr
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tt [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fD [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
-]
+    #load C++ library for computation of a secondary spectrum from stable gradients
+    lib.SSgrad.argtypes = [
+        ctypes.c_int,   # N_t = N_fD
+        ctypes.c_int,   # N_nu = N_tau
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tt [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fD [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tau [N_nu]
+        ctypes.c_double,   # nu0
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # SS_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # SS_im [N_t*N_nu]
+    ] 
 
-#load C++ library for fast Fourier detection of 1/nu^2 refraction
-lib.SS_refr.argtypes = [
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ctypes.c_int,   # N_fnum2
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # num2 [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fnum2 [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
-] 
+    #load C++ library for fast NuT transform including correction of refraction
+    lib.NuT_derefracted.argtypes = [
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ctypes.c_int,   # N_fD
+        ctypes.c_double,   # nu0
+        ctypes.c_double,   # f_refr
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tt [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fD [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
+    ]
 
-lib.ENuT.argtypes = [
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ctypes.c_int,   # N_fD
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tt [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fD [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hWF_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hWF_im [N_t*N_nu]
-] 
+    #load C++ library for fast Fourier detection of 1/nu^2 refraction
+    lib.SS_refr.argtypes = [
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ctypes.c_int,   # N_fnum2
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # num2 [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fnum2 [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
+    ] 
 
-lib.Lambda.argtypes = [
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ctypes.c_int,   # N_tau
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # L [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tau [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
-]  
+    lib.ENuT.argtypes = [
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ctypes.c_int,   # N_fD
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tt [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # fD [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hWF_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hWF_im [N_t*N_nu]
+    ] 
+
+    lib.Lambda.argtypes = [
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ctypes.c_int,   # N_tau
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # L [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # tau [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DS [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # hSS_im [N_t*N_nu]
+    ]  
+except:
+    print("C++ part not working. Recompiling lib_scinter.cpp on your OS might help. Be aware that support for MacOS is missing. I will continue without this functionality which might cause errors.")
 
 class intensity:
     type = "intensity"
@@ -596,6 +600,7 @@ class dynspec_masked(intensity):
         self.N_t,self.N_nu = self.DS.shape
         self.dt = np.mean(np.diff(self.t)) #self.t[1]-self.t[0]
         self.dnu = np.mean(np.diff(self.nu)) #self.nu[1]-self.nu[0]
+        self.dmjd = np.mean(np.diff(self.mjd))
         self.t_min = self.t[0]
         self.t_max = self.t[-1]
         self.nu_min = self.nu[0]
@@ -677,6 +682,34 @@ class dynspec_masked(intensity):
         coordinates = block_reduce(coordinates, block_size=(1,nu_sampling), func=np.mean, cval=self.nu[-1])
         self.nu = coordinates[0,:]
         self.recalculate()
+        
+    def Wiener_Filter(self,noise):
+        Wiener_mask = 1-self.mask
+        SS = np.abs(np.fft.fft2(self.DS))**2
+        
+        nx = SS.shape[1]
+        ny = SS.shape[0]
+        ACOR = np.fft.ifft2(SS).real
+        ##Define correlation matrix for flattened array
+        Smat = np.zeros((ny, nx, ny, nx), dtype=float)
+        Smat = ACOR[np.mod(
+            np.arange(ny)[:, np.newaxis, np.newaxis, np.newaxis] -
+            np.arange(ny)[np.newaxis, np.newaxis, :, np.newaxis], ny),
+                    np.mod(
+                        np.arange(nx)[np.newaxis, :, np.newaxis, np.newaxis] -
+                        np.arange(nx)[np.newaxis, np.newaxis, np.newaxis, :], nx)]
+        Smat = np.reshape(Smat, (nx * ny, nx * ny))
+        
+        N = sparse.diags(noise.ravel(), format='dia')
+        H = sparse.diags(Wiener_mask.astype(np.float).ravel(), format='dia')
+        
+        print(H.shape,Smat.shape,N.shape)
+        matrix = H @ Smat @ H.T + N
+
+        ## Filter operator
+        x = sparse.linalg.cg(matrix, self.DS.ravel().T)[0]
+        
+        self.DS = np.reshape((Smat @ H.T @ x).T, (ny, nx))
     
         
 class visibility:
@@ -4180,6 +4213,71 @@ class ACF_DS:
     #     nu_model_ACF = Lorentzian_mu(self.nu_shift, *popt)
         
     #     return modindex,modindex_err,ccorr_nu,nu_model_ACF
+    
+class Pearson_correlation_temporal:
+    type = "temporal correlation"
+    def __init__(self,DS1,DS2,**kwargs):
+        self.data_path = kwargs.get("data_path",None)
+        overwrite = kwargs.get("overwrite",True)
+        file_name = kwargs.get("file_name","Pearson_CF.npz")
+        if self.data_path==None:
+            self.compute(DS1,DS2,kwargs)
+        else:
+            if not os.path.exists(self.data_path):
+                os.makedirs(self.data_path)
+            file_data = os.path.join(self.data_path,file_name)
+            recompute = True
+            if DS1==None or DS2==None:
+                recompute = False
+            elif not overwrite:
+                if os.path.exists(file_data):
+                    recompute = False
+            if recompute:
+                self.compute(DS1,DS2,kwargs)
+                np.savez(file_data,t1=self.t1,t2=self.t2,CF=self.CF)
+            else:
+                if os.path.exists(file_data):
+                    lib_data = np.load(file_data)
+                    self.t1 = lib_data["t1"]
+                    self.t2 = lib_data["t2"]
+                    self.CF = lib_data["CF"]
+                else:
+                    raise KeyError
+        self.recalculate()
+        
+    def recalculate(self):
+        #provide some useful parameters
+        self.N_t1,self.N_t2 = self.CF.shape
+        
+    def compute(self,DS1,DS2,kwargs):
+        if not DS1.type == "intensity":
+            raise TypeError
+        if not DS2.type == "intensity":
+            raise TypeError
+        
+        data1 = np.copy(DS1.DS)
+        data2 = np.copy(DS2.DS)
+        data1[data1==0.] = np.nan
+        data2[data2==0.] = np.nan
+        
+        mu1 = np.nanmean(data1,axis=1,keepdims=True)
+        mu2 = np.nanmean(data2,axis=1,keepdims=True)
+        sigma1 = np.nanstd(data1,axis=1,keepdims=False)
+        sigma2 = np.nanstd(data2,axis=1,keepdims=False)
+        
+        self.t1 = DS1.t
+        self.t2 = DS2.t
+        self.CF = np.empty((DS1.N_t,DS2.N_t),dtype=float)
+        
+        #self.CF = np.nanmean((data1-mu1)[:,na,:]*(data2-mu2)[na,:,:],axis=2,keepdims=False)/sigma1[:,na]/sigma2[na,:]
+        bar = progressbar.ProgressBar(maxval=len(self.t1), widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+        bar.start()
+        for i1 in range(len(self.t1)):
+            bar.update(i1)
+            self.CF[i1,:] = np.nanmean((data1-mu1)[i1,na,:]*(data2-mu2)[:,:],axis=1,keepdims=False)/sigma1[i1]/sigma2
+        bar.finish()
+        
+        
         
 class EV_backtrafo(eigenvectors):
         

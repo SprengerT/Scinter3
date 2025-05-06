@@ -11,11 +11,6 @@ from astropy.coordinates import solar_system_ephemeris, get_body_barycentric, ge
 from astropy import units as u
 from scipy.interpolate import interp1d
 
-#import C++ library
-dir_path = os.path.dirname(os.path.realpath(__file__))
-file_c = os.path.join(os.path.join(dir_path,"libcpp"),"lib_scinter.so")
-lib = ctypes.CDLL(file_c)
-
 #constants
 au = 149597870700. #m
 pc = 648000./np.pi*au #m
@@ -36,338 +31,366 @@ pc_per_cm3 = pc/0.01**3
 hour = 3600.
 minute = 60.
 kms = 1000.
+f_DM = -e**2/(4.*np.pi*eps0*me*v_c)*pc_per_cm3
 
-#load C++ library for fast SP trafo
-lib.SumStatPoints.argtypes = [
-    ctypes.c_int,   # N_nu
-    ctypes.c_int,   # N_th
-    ctypes.c_int,   # N_t
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # ph [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # psi [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # wt [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-]
+try:
+    #import C++ library
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    file_c = os.path.join(os.path.join(dir_path,"libcpp"),"lib_scinter.so")
+    lib = ctypes.CDLL(file_c)
 
-#load C++ library for fast SP trafo
-lib.SumStatPoints_GlobTVar.argtypes = [
-    ctypes.c_int,   # N_nu
-    ctypes.c_int,   # N_th
-    ctypes.c_int,   # N_t
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # ph [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # psi [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # wt [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # TVar [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-]
+    #load C++ library for fast SP trafo
+    lib.SumStatPoints.argtypes = [
+        ctypes.c_int,   # N_nu
+        ctypes.c_int,   # N_th
+        ctypes.c_int,   # N_t
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # ph [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # psi [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # wt [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+    ]
 
-#load C++ library for fast SP trafo
-lib.SumStatPoints_SingleTVar.argtypes = [
-    ctypes.c_int,   # N_nu
-    ctypes.c_int,   # N_th
-    ctypes.c_int,   # N_t
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # ph [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # psi [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # wt [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # TVar [N_th,N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-]
+    #load C++ library for fast SP trafo
+    lib.SumStatPoints_GlobTVar.argtypes = [
+        ctypes.c_int,   # N_nu
+        ctypes.c_int,   # N_th
+        ctypes.c_int,   # N_t
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # ph [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # psi [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # wt [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # TVar [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+    ]
 
-#load C++ library for fast SP trafo
-lib.SumStatPoints_TDrift.argtypes = [
-    ctypes.c_int,   # N_nu
-    ctypes.c_int,   # N_th
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_D
-    ctypes.c_double,   # slope
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # ph [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # psi [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # wt [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # psi_Drift [N_D]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # TDrift [N_D]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-]
-    
-#load C++ library for fast SP computation of a system of two 1D screens
-lib.SumStatPoints_2scr.argtypes = [
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ctypes.c_int,   # N_x
-    ctypes.c_int,   # N_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
-    ctypes.c_double,   # D_x
-    ctypes.c_double,   # D_y
-    ctypes.c_double,   # D_s
-    ctypes.c_double,   # V_x
-    ctypes.c_double,   # V_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
-    ctypes.c_double,   # V_s_ra
-    ctypes.c_double,   # V_s_dec
-    ctypes.c_double,   # a_x
-    ctypes.c_double,   # a_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
-]
-lib.SumStatPoints_2scr_CP.argtypes = [
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ctypes.c_int,   # N_x
-    ctypes.c_int,   # N_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
-    ctypes.c_double,   # D_x
-    ctypes.c_double,   # D_y
-    ctypes.c_double,   # D_s
-    ctypes.c_double,   # V_x
-    ctypes.c_double,   # V_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
-    ctypes.c_double,   # V_s_ra
-    ctypes.c_double,   # V_s_dec
-    ctypes.c_double,   # a_x
-    ctypes.c_double,   # a_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
-    ctypes.c_double,   # mu_CPx
-    ctypes.c_double,   # mu_CPy
-    ctypes.c_double,   # p_ra
-    ctypes.c_double,   # p_dec
-    ctypes.c_double,   # s_ra
-    ctypes.c_double,   # s_dec
-]
+    #load C++ library for fast SP trafo
+    lib.SumStatPoints_SingleTVar.argtypes = [
+        ctypes.c_int,   # N_nu
+        ctypes.c_int,   # N_th
+        ctypes.c_int,   # N_t
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # ph [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # psi [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # wt [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # TVar [N_th,N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+    ]
 
-lib.SumStatPoints_2scr_atTel_CP.argtypes = [
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ctypes.c_int,   # N_x
-    ctypes.c_int,   # N_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
-    ctypes.c_double,   # D_x
-    ctypes.c_double,   # D_y
-    ctypes.c_double,   # D_s
-    ctypes.c_double,   # V_x
-    ctypes.c_double,   # V_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
-    ctypes.c_double,   # V_s_ra
-    ctypes.c_double,   # V_s_dec
-    ctypes.c_double,   # a_x
-    ctypes.c_double,   # a_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
-    ctypes.c_double,   # mu_CPx
-    ctypes.c_double,   # mu_CPy
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),   # p_ra
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),   # p_dec
-    ctypes.c_double,   # s_ra
-    ctypes.c_double,   # s_dec
-]
+    #load C++ library for fast SP trafo
+    lib.SumStatPoints_TDrift.argtypes = [
+        ctypes.c_int,   # N_nu
+        ctypes.c_int,   # N_th
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_D
+        ctypes.c_double,   # slope
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # ph [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # psi [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # wt [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # psi_Drift [N_D]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # TDrift [N_D]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+    ]
+        
+    #load C++ library for fast SP computation of a system of two 1D screens
+    lib.SumStatPoints_2scr.argtypes = [
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ctypes.c_int,   # N_x
+        ctypes.c_int,   # N_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
+        ctypes.c_double,   # D_x
+        ctypes.c_double,   # D_y
+        ctypes.c_double,   # D_s
+        ctypes.c_double,   # V_x
+        ctypes.c_double,   # V_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+        ctypes.c_double,   # V_s_ra
+        ctypes.c_double,   # V_s_dec
+        ctypes.c_double,   # a_x
+        ctypes.c_double,   # a_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
+    ]
+    lib.SumStatPoints_2scr_CP.argtypes = [
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ctypes.c_int,   # N_x
+        ctypes.c_int,   # N_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
+        ctypes.c_double,   # D_x
+        ctypes.c_double,   # D_y
+        ctypes.c_double,   # D_s
+        ctypes.c_double,   # V_x
+        ctypes.c_double,   # V_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+        ctypes.c_double,   # V_s_ra
+        ctypes.c_double,   # V_s_dec
+        ctypes.c_double,   # a_x
+        ctypes.c_double,   # a_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
+        ctypes.c_double,   # mu_CPx
+        ctypes.c_double,   # mu_CPy
+        ctypes.c_double,   # p_ra
+        ctypes.c_double,   # p_dec
+        ctypes.c_double,   # s_ra
+        ctypes.c_double,   # s_dec
+    ]
 
-lib.SumStatPoints_1scr_atTel_CP.argtypes = [
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ctypes.c_int,   # N_x
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
-    ctypes.c_double,   # D_x
-    ctypes.c_double,   # D_s
-    ctypes.c_double,   # V_x
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_ra [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_dec [N_t]
-    ctypes.c_double,   # V_s_ra
-    ctypes.c_double,   # V_s_dec
-    ctypes.c_double,   # a_x
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
-]
+    lib.SumStatPoints_2scr_atTel_CP.argtypes = [
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ctypes.c_int,   # N_x
+        ctypes.c_int,   # N_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
+        ctypes.c_double,   # D_x
+        ctypes.c_double,   # D_y
+        ctypes.c_double,   # D_s
+        ctypes.c_double,   # V_x
+        ctypes.c_double,   # V_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+        ctypes.c_double,   # V_s_ra
+        ctypes.c_double,   # V_s_dec
+        ctypes.c_double,   # a_x
+        ctypes.c_double,   # a_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
+        ctypes.c_double,   # mu_CPx
+        ctypes.c_double,   # mu_CPy
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),   # p_ra
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),   # p_dec
+        ctypes.c_double,   # s_ra
+        ctypes.c_double,   # s_dec
+    ]
 
-lib.SumStatPoints_1scr_PS_CP.argtypes = [
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ctypes.c_int,   # N_x
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
-    ctypes.c_double,   # D_x
-    ctypes.c_double,   # D_s
-    ctypes.c_double,   # V_x
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_ra [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_dec [N_t]
-    ctypes.c_double,   # V_s_ra
-    ctypes.c_double,   # V_s_dec
-    ctypes.c_double,   # s_par
-    ctypes.c_double,   # a_x
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
-    ctypes.c_double,   # mu_CPx
-]
+    lib.SumStatPoints_1scr_atTel_CP.argtypes = [
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ctypes.c_int,   # N_x
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
+        ctypes.c_double,   # D_x
+        ctypes.c_double,   # D_s
+        ctypes.c_double,   # V_x
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_ra [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_dec [N_t]
+        ctypes.c_double,   # V_s_ra
+        ctypes.c_double,   # V_s_dec
+        ctypes.c_double,   # a_x
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
+    ]
 
-lib.SumStatPoints_1scr_PS_CP_2D.argtypes = [
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ctypes.c_int,   # N_x
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x_ra [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x_dec [N_x]
-    ctypes.c_double,   # D_x
-    ctypes.c_double,   # D_s
-    ctypes.c_double,   # V_x_ra
-    ctypes.c_double,   # V_x_dec
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_ra [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_dec [N_t]
-    ctypes.c_double,   # V_s_ra
-    ctypes.c_double,   # V_s_dec
-    ctypes.c_double,   # s_ra
-    ctypes.c_double,   # s_dec
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
-    ctypes.c_double,   # mu_CPx
-]
+    lib.SumStatPoints_1scr_PS_CP.argtypes = [
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ctypes.c_int,   # N_x
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
+        ctypes.c_double,   # D_x
+        ctypes.c_double,   # D_s
+        ctypes.c_double,   # V_x
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_ra [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_dec [N_t]
+        ctypes.c_double,   # V_s_ra
+        ctypes.c_double,   # V_s_dec
+        ctypes.c_double,   # s_par
+        ctypes.c_double,   # a_x
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
+        ctypes.c_double,   # mu_CPx
+    ]
 
-# lib.SumStatPoints_CPx.argtypes = [
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-    # ctypes.c_int,   # N_t
-    # ctypes.c_int,   # N_nu
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    # ctypes.c_int,   # N_y
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
-    # ctypes.c_double,   # D_x
-    # ctypes.c_double,   # D_y
-    # ctypes.c_double,   # D_s
-    # ctypes.c_double,   # V_x
-    # ctypes.c_double,   # V_y
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
-    # ctypes.c_double,   # V_s_ra
-    # ctypes.c_double,   # V_s_dec
-    # ctypes.c_double,   # a_x
-    # ctypes.c_double,   # a_y
-    # ctypes.c_double,  # mu_x
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
-# ]
+    lib.SumStatPoints_1scr_PS_CP_2D.argtypes = [
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ctypes.c_int,   # N_x
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x_ra [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x_dec [N_x]
+        ctypes.c_double,   # D_x
+        ctypes.c_double,   # D_s
+        ctypes.c_double,   # V_x_ra
+        ctypes.c_double,   # V_x_dec
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_ra [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # p_dec [N_t]
+        ctypes.c_double,   # V_s_ra
+        ctypes.c_double,   # V_s_dec
+        ctypes.c_double,   # s_ra
+        ctypes.c_double,   # s_dec
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_x [N_x]
+        ctypes.c_double,   # mu_CPx
+    ]
 
-# #load C++ library for fast SP computation of the E-field at the 2nd of two 1D screens
-# lib.SumStatPoints_at_2ndSCR.argtypes = [
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu*N_x]
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu*N_x]
-    # ctypes.c_int,   # N_t
-    # ctypes.c_int,   # N_nu
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    # ctypes.c_int,   # N_x
-    # ctypes.c_int,   # N_y
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # pos_x [N_x]
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
-    # ctypes.c_double,   # D_x
-    # ctypes.c_double,   # D_y
-    # ctypes.c_double,   # D_s
-    # ctypes.c_double,   # V_x
-    # ctypes.c_double,   # V_y
-    # ctypes.c_double,   # V_s
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
-    # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
-# ]
+    # lib.SumStatPoints_CPx.argtypes = [
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+        # ctypes.c_int,   # N_t
+        # ctypes.c_int,   # N_nu
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        # ctypes.c_int,   # N_y
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
+        # ctypes.c_double,   # D_x
+        # ctypes.c_double,   # D_y
+        # ctypes.c_double,   # D_s
+        # ctypes.c_double,   # V_x
+        # ctypes.c_double,   # V_y
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+        # ctypes.c_double,   # V_s_ra
+        # ctypes.c_double,   # V_s_dec
+        # ctypes.c_double,   # a_x
+        # ctypes.c_double,   # a_y
+        # ctypes.c_double,  # mu_x
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
+    # ]
 
-#load C++ library for fast SP computation of the E-field at the 2nd of two 1D screens
-lib.SumStatPoints_at_2ndSCR.argtypes = [
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_nu
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
-    ctypes.c_int,   # N_x
-    ctypes.c_int,   # N_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
-    ctypes.c_double,   # D_x
-    ctypes.c_double,   # D_y
-    ctypes.c_double,   # D_s
-    ctypes.c_double,   # V_x
-    ctypes.c_double,   # V_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
-    ctypes.c_double,   # V_s_ra
-    ctypes.c_double,   # V_s_dec
-    ctypes.c_double,   # a_x
-    ctypes.c_double,   # a_y
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
-]
+    # #load C++ library for fast SP computation of the E-field at the 2nd of two 1D screens
+    # lib.SumStatPoints_at_2ndSCR.argtypes = [
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu*N_x]
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu*N_x]
+        # ctypes.c_int,   # N_t
+        # ctypes.c_int,   # N_nu
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        # ctypes.c_int,   # N_x
+        # ctypes.c_int,   # N_y
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # pos_x [N_x]
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
+        # ctypes.c_double,   # D_x
+        # ctypes.c_double,   # D_y
+        # ctypes.c_double,   # D_s
+        # ctypes.c_double,   # V_x
+        # ctypes.c_double,   # V_y
+        # ctypes.c_double,   # V_s
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
+        # ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
+    # ]
 
-#load C++ library for fast integration of 1D DM distribution for a single pixel
-lib.IntScreenSimple.argtypes = [
-    ctypes.c_int,   # N_th
-    ctypes.c_double,   # t
-    ctypes.c_double,   # nu
-    ctypes.c_double,   # V
-    ctypes.c_double,   # thF
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # th [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DM [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E
-]
+    #load C++ library for fast SP computation of the E-field at the 2nd of two 1D screens
+    lib.SumStatPoints_at_2ndSCR.argtypes = [
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t*N_nu]
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ctypes.c_int,   # N_x
+        ctypes.c_int,   # N_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # im_y [N_y]
+        ctypes.c_double,   # D_x
+        ctypes.c_double,   # D_y
+        ctypes.c_double,   # D_s
+        ctypes.c_double,   # V_x
+        ctypes.c_double,   # V_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_ra [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # V_p_dec [N_t]
+        ctypes.c_double,   # V_s_ra
+        ctypes.c_double,   # V_s_dec
+        ctypes.c_double,   # a_x
+        ctypes.c_double,   # a_y
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # mu_y [N_y]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_y [N_y]
+    ]
 
-#load C++ library for fast integration of 1D DM distribution for a line in time
-lib.DMI_stripe.argtypes = [
-    ctypes.c_int,   # N_t
-    ctypes.c_int,   # N_th
-    ctypes.c_double,   # v_nu
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # thetas [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_disp [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_delay [N_th]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_Doppler [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t]
-    ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t]
-]
+    #load C++ library for fast integration of 1D DM distribution for a single pixel
+    lib.IntScreenSimple.argtypes = [
+        ctypes.c_int,   # N_th
+        ctypes.c_double,   # t
+        ctypes.c_double,   # nu
+        ctypes.c_double,   # V
+        ctypes.c_double,   # thF
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # th [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # DM [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E
+    ]
+
+    #load C++ library for fast integration of 1D DM distribution for a line in time
+    lib.DMI_stripe.argtypes = [
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_th
+        ctypes.c_double,   # v_nu
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # thetas [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_disp [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_delay [N_th]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # phi_Doppler [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_im [N_t]
+    ]
+
+    #lib.DM2D_sinc(E_real,E_imag,N_t,N_nu,N_x,N_y,zeta_x,zeta_y,t,nu,self.stau_x,self.stau_y,self.M,self.M_dx,self.M_dy)
+    lib.DM2D_sinc.argtypes = [
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_real [N_t*N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # E_imag [N_t*N_nu]
+        ctypes.c_int,   # N_t
+        ctypes.c_int,   # N_nu
+        ctypes.c_int,   # N_x
+        ctypes.c_int,   # N_y
+        ctypes.c_double,   # zeta_x
+        ctypes.c_double,   # zeta_x
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # t [N_t]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # nu [N_nu]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # stau_x [N_x]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # stau_y [N_y]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # M [N_x*N_y]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # M_dx [N_x*N_y]
+        ndpointer(dtype=np.float64, flags='CONTIGUOUS', ndim=1),  # M_dy [N_x*N_y]
+    ]
+except:
+    print("C++ part not working. Recompiling lib_scinter.cpp on your OS might help. Be aware that support for MacOS is missing. Scinter will continue without this functionality which might cause errors.")
 
 def IntScreenSimple(N_th,t,nu,V,thF,th,DM):
     E = np.array([0.,0.])
@@ -1527,9 +1550,11 @@ class Evolution_Two1DScreens:
         
         if telcoords=="":
             self.p_vec = np.zeros((2,len(self.mjds)),dtype=float)
+            self.p_w = np.zeros((len(self.mjds)),dtype=float)
         else:
             p_ra = np.zeros_like(self.mjds)
             p_dec = np.zeros_like(self.mjds)
+            p_w = np.zeros_like(self.mjds)
             vtel_ra = np.zeros_like(mjds)
             vtel_dec = np.zeros_like(mjds)
             for i,v_mjd in enumerate(self.mjds):
@@ -1540,6 +1565,7 @@ class Evolution_Two1DScreens:
                 pz = pos_xyz.z.to(u.m).value
                 p_ra[i] = - px * np.sin(self.rarad) + py * np.cos(self.rarad)
                 p_dec[i] = - px * np.sin(self.decrad) * np.cos(self.rarad) - py * np.sin(self.decrad) * np.sin(self.rarad) + pz * np.cos(self.decrad)
+                p_w[i] = px * np.cos(self.decrad) * np.cos(self.rarad) + py * np.cos(self.decrad) * np.sin(self.rarad) + pz * np.sin(self.decrad)
                 vx = vel_xyz.x.to(u.m/u.s).value
                 vy = vel_xyz.y.to(u.m/u.s).value
                 vz = vel_xyz.z.to(u.m/u.s).value
@@ -1550,6 +1576,7 @@ class Evolution_Two1DScreens:
                 self.vtel_vec = self.vtel_vec + np.array([vtel_ra,vtel_dec])
             #save position of telescope
             self.p_vec = np.array([p_ra,p_dec])
+            self.p_w = p_w
         
         self.library = {}
             
@@ -1596,7 +1623,7 @@ class Evolution_Two1DScreens:
         Veff1_x = np.dot(np.swapaxes(Veff_x_vec,0,1),uv_x_par) - D_s/D_xs*V_x
         Veff_y_vec = self.vtel_vec + D_y/D_ys*V_s_vec[:,na]
         Veff1_y = np.dot(np.swapaxes(Veff_y_vec,0,1),uv_y_par) - D_s/D_ys*V_y
-        zetas.update({"Deff1_x":Deff1_x,"Veff1_x":Veff1_x,"Deff1_y":Deff1_y,"Veff1_y":Veff1_y,"Veff_x_vec":np.swapaxes(Veff_x_vec,0,1)})
+        zetas.update({"Deff1_x":Deff1_x,"Veff1_x":Veff1_x,"Deff1_y":Deff1_y,"Veff1_y":Veff1_y,"Veff1_x_vec":np.swapaxes(Veff_x_vec,0,1)})
         #interacting screens effective quantities
         Deff2_x = D_s*D_y*D_x/( D_y*D_xs - D_x*D_ys*c**2 )
         Veff2_x = -( D_s*D_y*V_x - c*D_s*D_x*V_y - s*c*D_x*D_ys*V_p_ort - s*D_x*D_y*V_s_ort - (D_y*D_xs-D_x*D_ys*c**2)*V_p_par ) / ( D_y*D_xs - D_x*D_ys*c**2 )
@@ -1616,11 +1643,11 @@ class Evolution_Two1DScreens:
         zeta2_fx = np.sqrt(Deff2_x/(2.*v_c))*np.abs((Deff2_y*Veff2_x + D_mix*Veff2_y)/(Deff2_y*Deff2_x-D_mix**2))
         zeta2_fy = np.sqrt(Deff2_y/(2.*v_c))*np.abs((Deff2_x*Veff2_y + D_mix*Veff2_x)/(Deff2_x*Deff2_y-D_mix**2))
         zetas.update({"zeta1_x":zeta1_x,"zeta1_y":zeta1_y,"zeta2_x":zeta2_x,"zeta2_y":zeta2_y,"zeta2_m":zeta2_m,"zeta2_fx":zeta2_fx,"zeta2_fy":zeta2_fy})
-        #Compute time shift (first screen) relative to center of Earth
+        #Compute time shift relative to center of Earth
         p_par = np.dot(np.swapaxes(self.p_vec,0,1), uv_x_par)
         p_ort = np.dot(np.swapaxes(self.p_vec,0,1), uv_x_ort)
         peff_x = p_par + (s*c*D_x*D_ys)/(D_y*D_xs-D_x*D_y*c**2)*p_ort
-        Dt_2x = peff_x/Veff2_x
+        Dt_2x = peff_x/Veff2_x - self.p_w/v_c
         peff_y = -(s*D_y*D_xs)/(D_y*D_xs-D_x*D_y*c**2)*p_ort
         Dt_2y = peff_y/Veff2_y
         zetas.update({"Dt_2x":Dt_2x,"Dt_2y":Dt_2y})
@@ -1715,7 +1742,7 @@ class Evolution_One1DScreen(Evolution_Two1DScreens):
         zetas.update({"zeta1_x":zeta1_x})
         #Compute time shift (first screen) relative to center of Earth
         p_par = np.dot(np.swapaxes(self.p_vec,0,1), uv_x_par)
-        Dt_1x = p_par/Veff1_x
+        Dt_1x = p_par/Veff1_x - self.p_w/v_c
         zetas.update({"Dt_1x":Dt_1x})
         #return as dictionary
         return zetas
@@ -1944,5 +1971,29 @@ class DM_integration_1D:
         DMgrad_max = DMgrad[i_max]
                 
         E = self._integrate(DMgrad_max)
+        return E
+        
+class DM2D_sinc:
+    def __init__(self,DM,stau_x,stau_y):
+        self.M = f_DM*DM/(2.*np.pi)
+        self.stau_x = stau_x
+        self.stau_y = stau_y
+        self.dstau = stau_x[1]-stau_x[0]
+        assert self.dstau==stau_y[1]-stau_y[0] #more testing required for asymmetric axes
+        self.M_dx,self.M_dy = np.gradient(self.M,self.dstau)
+        
+    def compute(self,t,nu,zeta_x,zeta_y):
+        N_t = len(t)
+        N_nu = len(nu)
+        E_real = np.zeros(N_t*N_nu,dtype=float)
+        E_imag = np.zeros(N_t*N_nu,dtype=float)
+        
+        N_x = len(self.stau_x)
+        N_y = len(self.stau_y)
+        
+        lib.DM2D_sinc(E_real,E_imag,N_t,N_nu,N_x,N_y,zeta_x,zeta_y,t,nu,self.stau_x,self.stau_y,self.M.flatten(),self.M_dx.flatten(),self.M_dy.flatten())
+                
+        E = E_real.reshape((N_t,N_nu))+1.0j*E_imag.reshape((N_t,N_nu))
+        
         return E
         
