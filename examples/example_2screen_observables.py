@@ -64,32 +64,32 @@ mjds = np.linspace(60000.,61000.,num=100)
 screen = scinter_computation.Evolution_Two1DScreens(mjds,psrname,telcoords=telescope)
 """
 Options:
-include_earth_rotation_in_veff
+include_earth_rotation_in_veff : apply correction to velocity from Earth's rotation (careful: varies during observation and is already included in p(t) where it is used) default: False
 """
 #compute observables from initial values
 V_x_par = V_x*np.cos((a_x-a_Vx)*np.pi/180.) #velocity along first screen
 zetas = screen.compute(D_s=D_s,PMRA=PMRA,PMDEC=PMDEC,D_x=D_x,a_x=a_x,V_x=V_x_par,a_y=a_y,D_y=D_y,V_y=V_y)
 """
-returns a dictionary of predicted observables
-Deff1_x : effective distance along first screen in one-screen theory
-Deff1_y : effective distance along second screen in one-screen theory
-Deff2_x : effective distance along first screen in two-screen theory
-Deff2_y : effective distance along second screen in two-screen theory
-D_mix   : distance factor of mixed term in two-screen theory
-Veff1_x : effective velocity along first screen in one-screen theory
-Veff1_y : effective velocity along second screen in one-screen theory
-Veff2_x : effective velocity along first screen in two-screen theory
-Veff2_y : effective velocity along second screen in two-screen theory
-Veff1_x_vec : effective velocity vector of first screen in one-screen theory
-zeta1_x : zeta from arc curvature of first screen in one-screen theory
-zeta1_y : zeta from arc curvature of second screen in one-screen theory
-zeta2_x : zeta from arc curvature of first screen in two-screen theory
-zeta2_y : zeta from arc curvature of second screen in two-screen theory
-zeta2_m : zeta from modulation speed (modulation of arc of first screen by dynamic spectrum of second screen)
-zeta2_fx: zeta from feature movement of first screen in two-screen theory (equal to that of arc curvature in one-screen theory)
-zeta2_fy: zeta from feature movement of second screen in two-screen theory (equal to that of arc curvature in one-screen theory)
-Dt_2x   : delay of scintillation pattern with respect to center of Earth due to first screen in two-screen theory
-Dt_2y   : delay of scintillation pattern with respect to center of Earth due to second screen in two-screen theory
+returns a dictionary of predicted observables (N_t = length of mjds)
+Deff1_x : effective distance along first screen in one-screen theory | scalar
+Deff1_y : effective distance along second screen in one-screen theory | scalar
+Deff2_x : effective distance along first screen in two-screen theory | scalar
+Deff2_y : effective distance along second screen in two-screen theory | scalar
+D_mix   : distance factor of mixed term in two-screen theory | scalar
+Veff1_x : effective velocity along first screen in one-screen theory | (N_t)-array
+Veff1_y : effective velocity along second screen in one-screen theory | (N_t)-array
+Veff2_x : effective velocity along first screen in two-screen theory | (N_t)-array
+Veff2_y : effective velocity along second screen in two-screen theory | (N_t)-array
+Veff1_x_vec : effective velocity vector of first screen in one-screen theory | (N_t,2)-array
+zeta1_x : zeta from arc curvature of first screen in one-screen theory | (N_t)-array
+zeta1_y : zeta from arc curvature of second screen in one-screen theory | (N_t)-array
+zeta2_x : zeta from arc curvature of first screen in two-screen theory | (N_t)-array
+zeta2_y : zeta from arc curvature of second screen in two-screen theory | (N_t)-array
+zeta2_m : zeta from modulation speed (modulation of arc of first screen by dynamic spectrum of second screen) | (N_t)-array
+zeta2_fx: zeta from feature movement of first screen in two-screen theory (equal to that of arc curvature in one-screen theory) | (N_t)-array
+zeta2_fy: zeta from feature movement of second screen in two-screen theory (equal to that of arc curvature in one-screen theory) | (N_t)-array
+Dt_2x   : delay of scintillation pattern with respect to center of Earth due to first screen in two-screen theory | (N_t)-array
+Dt_2y   : delay of scintillation pattern with respect to center of Earth due to second screen in two-screen theory | (N_t)-array
 """
 
 #If required, zeta can be translated to an arc curvature at frequency nu0 in Hertz with
