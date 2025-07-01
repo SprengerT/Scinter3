@@ -258,6 +258,39 @@ void  SumStatPoints_TDrift (int N_nu, int N_th, int N_t, int N_D, double slope, 
 }
 
 extern "C"
+void  SumStatPoints_1scr_2D_DMRM (double *E_real, double *E_im, int N_t, int N_nu, double *nu, int N_th, double *x, double *y, double Deff, double *peff_ra, double *peff_dec, double *mu, double *phi, double mu_CP, double *dDMdth_vec, double *dRMdth_vec, double *th_shift_ra, double *th_shift_dec, double *th_refr_ra, double *th_refr_dec)
+{
+	#define  REAL(i_t,i_nu)  E_real[(i_t)*N_nu + (i_nu)]
+	#define  IMAG(i_t,i_nu)  E_im[(i_t)*N_nu + (i_nu)]
+	
+	#pragma omp parallel for
+	for (int i_t = 0; i_t < N_t; i_t++){
+		double Phase;
+		double t_ne_ra;
+		double t_ne_dec;
+		double xc;
+		double yc;
+		for (int i_nu = 0; i_nu < N_nu; i_nu++){
+			t_ne_ra = dDMdth_vec[0]/nu[i_nu]+dRMdth_vec[0]/pow(nu[i_nu],2);
+			t_ne_dec = dDMdth_vec[1]/nu[i_nu]+dRMdth_vec[1]/pow(nu[i_nu],2);
+			for (int i_th = 0; i_th < N_th; i_th++){
+				Phase = phi[i_th] + x[i_th]*( t_ne_ra + nu[i_nu]*(Deff*x[i_th]-peff_ra[i_t]) ) + y[i_th]*( t_ne_dec + nu[i_nu]*(Deff*y[i_th]-peff_dec[i_t]) ) ;
+				REAL(i_t,i_nu) += mu[i_th]*cos(Phase);
+				IMAG(i_t,i_nu) += mu[i_th]*sin(Phase);
+			}
+			xc = th_shift_ra[i_t] + th_refr_ra[i_nu];
+			yc = th_shift_dec[i_t] + th_refr_dec[i_nu];
+			Phase = xc*( t_ne_ra + nu[i_nu]*(Deff*xc-peff_ra[i_t]) ) + yc*( t_ne_dec + nu[i_nu]*(Deff*yc-peff_dec[i_t]) ) ;
+			REAL(i_t,i_nu) += mu_CP*cos(Phase);
+			IMAG(i_t,i_nu) += mu_CP*sin(Phase);
+		}
+	}
+	
+	#undef  REAL
+	#undef  IMAG
+}
+
+extern "C"
 void  SumStatPoints_2scr (double *E_real, double *E_im, int N_t, int N_nu, double *t, double *nu, int N_x, int N_y, double *im_x, double *im_y, double D_x, double D_y, double D_s,
 	double V_x, double V_y, double *V_p_ra, double *V_p_dec, double V_s_ra, double V_s_dec, double a_x, double a_y, double *mu_x, double *mu_y, double *phi_x, double *phi_y)
 {
@@ -929,4 +962,47 @@ void  SSgrad (int N_t, int N_nu, double *tt, double *nu, double* fD, double* tau
 	#undef  DYNSPEC
 	#undef  REAL
 	#undef  IMAG
+}
+
+extern "C"
+void  DM2D_sinc (double *E_real, double *E_imag, int N_t, int N_nu, int N_x, int N_y, double zeta_x, double zeta_y, double *t, double *nu, double *stau_x, double *stau_y, double *M, double *M_dx, double *M_dy)
+{
+	//tell c++ how to read numpy arrays
+	#define  REAL(i_t,i_nu)  E_real[(i_t)*N_nu + (i_nu)]
+	#define  IMAG(i_t,i_nu)  E_imag[(i_t)*N_nu + (i_nu)]
+	#define  M0(i_x,i_y)  M[(i_x)*N_y + (i_y)]
+	#define  MX(i_x,i_y)  M_dx[(i_x)*N_y + (i_y)]
+	#define  MY(i_x,i_y)  M_dy[(i_x)*N_y + (i_y)]
+	
+	#pragma omp parallel for
+	for (int i_t = 0; i_t < N_t; i_t++){
+		double dstau_x = M_PI*(stau_x[1]-stau_x[0]);
+		double dstau_y = M_PI*(stau_y[1]-stau_y[0]);
+		double Phi0,Phix,Phiy,mu,thx,thy,tau_x,tau_y;
+		double wt_x = zeta_x*t[i_t];
+		double wt_y = zeta_y*t[i_t];
+		for (int i_x = 0; i_x < N_x; i_x++){
+			thx = stau_x[i_x]+wt_x;
+			tau_x = pow(thx,2);
+			thx *= 2;
+			for (int i_y = 0; i_y < N_y; i_y++){
+				thy = stau_y[i_y]+wt_y;
+				tau_y = pow(thy,2);
+				thy *= 2;
+				for (int i_nu = 0; i_nu < N_nu; i_nu++){
+					Phi0 = 2.*M_PI*( M0(i_x,i_y)/nu[i_nu] + nu[i_nu]*(tau_x+tau_y) );
+					Phix = MX(i_x,i_y)/nu[i_nu] + nu[i_nu]*thx;
+					Phiy = MY(i_x,i_y)/nu[i_nu] + nu[i_nu]*thy;
+					mu = sin(Phix*dstau_x)/Phix*sin(Phiy*dstau_y)/Phiy;
+					REAL(i_t,i_nu) += mu*cos(Phi0);
+					IMAG(i_t,i_nu) += mu*sin(Phi0);
+				}
+			}
+		}
+	}
+	#undef  REAL
+	#undef  IMAG
+	#undef  M0
+	#undef  MX
+	#undef  MY
 }
